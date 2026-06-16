@@ -92,27 +92,25 @@ async function askAboutImage() {
   emit('askImage', dataUrl);
 }
 
+// currentId 变化：重置 tab，加载 PDF
 watch(() => papers.currentId, async (id) => {
   view.value = 'md';
   if (!id) return;
-  // 渲染 markdown
-  await nextTick();
-  if (mdBox.value && papers.currentMd && papers.currentPaper?.state === 'done') {
-    await renderMarkdown(mdBox.value, papers.currentMd, id);
-  } else if (mdBox.value) {
-    mdBox.value.innerHTML = '';
-  }
-  // 加载 PDF
   if (pdfFrame.value) {
     const url = await store.getPdfUrl(id).catch(() => null);
     pdfFrame.value.src = url || 'about:blank';
   }
 });
 
-// currentMd 变化时（解析完成）补充渲染
+// currentMd 变化（含 null→值、值→null、切论文后 open 完成）：渲染
 watch(() => papers.currentMd, async (md) => {
-  if (!mdBox.value || !md || papers.currentPaper?.state !== 'done') return;
-  await renderMarkdown(mdBox.value, md, papers.currentId);
+  await nextTick();
+  if (!mdBox.value) return;
+  if (md && papers.currentPaper?.state === 'done') {
+    await renderMarkdown(mdBox.value, md, papers.currentId);
+  } else {
+    mdBox.value.innerHTML = '';
+  }
 });
 </script>
 

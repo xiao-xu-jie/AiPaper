@@ -33,6 +33,10 @@ export const usePapersStore = defineStore('papers', {
     },
 
     async open(id) {
+      if (this.currentId === id) {
+        // 同一篇：强制清空再赋值，触发 Viewer watch
+        this.currentMd = null;
+      }
       this.currentId = id;
       const md = await store.loadMarkdown(id).catch(() => null);
       this.currentMd = md;

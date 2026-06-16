@@ -20,7 +20,10 @@
       "Bash(git commit *)",
       "Bash(node --input-type=module --eval ' *)",
       "Bash(git checkout *)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(python3 *)",
+      "Bash(powershell *)",
+      "Bash(npm run *)"
     ]
   }
 }

@@ -113,6 +113,12 @@ export const usePapersStore = defineStore('papers', {
       await this._extractZip(paperId, buf);
       this._patch(paperId, { state: 'done', stateText: '已完成', progress: 100, doneAt: Date.now() });
       await this.refresh();
+      // key 变化触发 Viewer 重建：currentId null → paperId
+      if (this.currentId === paperId) {
+        this.currentId = null;
+        await new Promise((r) => setTimeout(r, 0));
+        this.currentId = paperId;
+      }
     },
 
     async _extractZip(paperId, arrayBuffer) {

@@ -104,7 +104,6 @@ async function askAboutImage() {
   emit('askImage', dataUrl);
 }
 </script>
-</script>
 
 <style scoped>
 .viewer { display: flex; flex-direction: column; overflow: hidden; flex: 1; min-width: 200px; }

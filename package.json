@@ -33,7 +33,14 @@
     "productName": "AI Paper",
     "directories": { "output": "dist-electron" },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "AI Paper"
     },
     "files": [
       "dist/**",

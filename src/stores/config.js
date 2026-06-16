@@ -5,7 +5,9 @@ import * as agent from '../lib/agent.js';
 // 非 Electron 环境（网页模式）自动使用同源代理
 function autoProxyPrefix() {
   if (typeof window === 'undefined') return '';
+  // Electron：file:// 协议（生产）或含 Electron 的 userAgent（开发）
   if (window.location.protocol === 'file:') return '';
+  if (navigator.userAgent.includes('Electron')) return '';
   return `${window.location.origin}/proxy?url=`;
 }
 

@@ -2,7 +2,13 @@ import { defineStore } from 'pinia';
 import * as mineru from '../lib/mineru.js';
 import * as agent from '../lib/agent.js';
 
-const DEFAULT_NOTE_TEMPLATE = `# {{title}}
+// 非 Electron 环境（网页模式）自动使用同源代理
+function autoProxyPrefix() {
+  if (typeof window === 'undefined') return '';
+  // Electron 加载 file:// 协议，不需要代理（session 已注入 CORS）
+  if (window.location.protocol === 'file:') return '';
+  return `${window.location.origin}/proxy?url=`;
+}
 
 ## 基本信息
 - **作者**：
@@ -37,13 +43,8 @@ export const useConfigStore = defineStore('config', {
   }),
   actions: {
     init() {
-      // 网页端：若未手动配置代理，自动使用同源代理前缀
-      if (!this.proxy && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-        const autoProxy = `${window.location.origin}/proxy?url=`;
-        mineru.setProxy(autoProxy);
-      } else {
-        mineru.setProxy(this.proxy);
-      }
+      const effectiveProxy = this.proxy || autoProxyPrefix();
+      mineru.setProxy(effectiveProxy);
       agent.configure(this.aiUrl, this.aiModel, this.aiKey);
     },
     save() {
@@ -55,7 +56,7 @@ export const useConfigStore = defineStore('config', {
       localStorage.setItem('ai_model', this.aiModel);
       localStorage.setItem('ai_key', this.aiKey);
       localStorage.setItem('note_template', this.noteTemplate);
-      const effectiveProxy = this.proxy || (window.location.hostname === 'localhost' ? `${window.location.origin}/proxy?url=` : '');
+      const effectiveProxy = this.proxy || autoProxyPrefix();
       mineru.setProxy(effectiveProxy);
       agent.configure(this.aiUrl, this.aiModel, this.aiKey);
     },

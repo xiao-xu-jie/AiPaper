@@ -41,6 +41,11 @@
       </label>
       <button class="btn" @click="cfg.save()">保存设置</button>
       <button class="btn" @click="$emit('pickDir')">📁 选择数据文件夹</button>
+      <button class="btn" @click="showTemplate = !showTemplate">📝 笔记模板</button>
+    </div>
+    <div v-if="showTemplate" class="template-editor">
+      <div class="template-label">阅读笔记模板（支持 <code>{{title}}</code> 占位符）</div>
+      <textarea v-model="cfg.noteTemplate" rows="10" class="template-textarea" />
     </div>
     <div v-if="fetchError" class="fetch-error">{{ fetchError }}</div>
   </section>
@@ -52,6 +57,7 @@ import { useConfigStore } from '../stores/config.js';
 
 const cfg = useConfigStore();
 defineEmits(['pickDir']);
+const showTemplate = ref(false);
 
 const models = ref([]);
 const fetching = ref(false);
@@ -116,5 +122,10 @@ input[type="password"] { min-width: 220px; }
 .btn-icon.loading { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .fetch-error { margin-top: 6px; font-size: 12px; color: var(--red); }
+.template-editor { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.template-label { font-size: 12px; color: var(--muted); }
+.template-label code { background: #f0f1f3; padding: 1px 4px; border-radius: 3px; }
+.template-textarea { width: 100%; font-family: "SF Mono", Consolas, monospace; font-size: 13px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; resize: vertical; line-height: 1.6; outline: none; }
+.template-textarea:focus { border-color: var(--primary); }
 </style>
 

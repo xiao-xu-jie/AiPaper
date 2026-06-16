@@ -5,6 +5,7 @@
       <div class="view-tabs">
         <button class="tab" :class="{ active: view === 'md' }" @click="view = 'md'">Markdown</button>
         <button class="tab" :class="{ active: view === 'pdf' }" @click="view = 'pdf'">原文 PDF</button>
+        <button class="tab" :class="{ active: view === 'notes' }" @click="view = 'notes'">阅读笔记</button>
       </div>
       <button class="btn small" @click="$emit('toggleChat')">💬 AI 助手</button>
     </div>
@@ -23,6 +24,7 @@
       <div v-show="view === 'pdf'" class="pdf-wrap">
         <iframe ref="pdfFrame" title="PDF 预览" />
       </div>
+      <NotesView v-if="view === 'notes'" />
     </div>
   </section>
 
@@ -41,6 +43,7 @@ import { ref, watch, computed, reactive } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { renderMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
+import NotesView from './NotesView.vue';
 
 const emit = defineEmits(['toggleChat', 'askImage', 'askText']);
 const papers = usePapersStore();

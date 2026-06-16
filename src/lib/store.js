@@ -236,3 +236,14 @@ export async function deleteChat(paperId, chatId) {
     await dir.removeEntry(`${chatId}.json`);
   } catch { /* 忽略 */ }
 }
+
+// ---------- 阅读笔记 ----------
+export async function saveNote(paperId, text) {
+  const dir = await getPaperDir(paperId, true);
+  await writeFile(dir, 'note.md', text);
+}
+
+export async function loadNote(paperId) {
+  const dir = await getPaperDir(paperId);
+  return readFileText(dir, 'note.md');
+}

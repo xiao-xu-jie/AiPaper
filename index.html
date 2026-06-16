@@ -129,9 +129,10 @@
     <!-- AI 对话面板 -->
     <aside id="chat-panel" class="chat-panel" style="display:none">
       <div class="chat-head">
-        <span>AI 助手</span>
-        <button id="chat-clear" class="btn small">清空</button>
-        <button id="chat-close" class="btn small">✕</button>
+        <button id="chat-sessions-btn" class="btn small" title="切换会话">☰</button>
+        <span id="chat-title" class="chat-title" title="双击编辑标题">新对话</span>
+        <button id="chat-new" class="btn small" title="新建会话">＋</button>
+        <button id="chat-close" class="btn small" title="关闭">✕</button>
       </div>
       <div id="chat-messages" class="chat-messages"></div>
       <div class="chat-input-wrap" id="chat-input-wrap">
@@ -140,6 +141,18 @@
       </div>
     </aside>
   </main>
+
+  <!-- 会话选择器弹窗 -->
+  <div id="session-picker" class="overlay" style="display:none">
+    <div class="session-picker-card">
+      <div class="sp-head">
+        <span>选择对话</span>
+        <button id="sp-close" class="btn small">✕</button>
+      </div>
+      <button id="sp-new" class="btn primary sp-new-btn">＋ 新建对话</button>
+      <ul id="sp-list" class="sp-list"></ul>
+    </div>
+  </div>
 
   <div id="toast" class="toast"></div>
 

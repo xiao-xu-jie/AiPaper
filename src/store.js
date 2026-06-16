@@ -201,3 +201,38 @@ export async function deletePaper(paperId) {
   assertRoot();
   await rootDir.removeEntry(paperId, { recursive: true });
 }
+
+// ---------- AI 会话 ----------
+async function getChatsDir(paperId, create = false) {
+  const dir = await getPaperDir(paperId, create);
+  return dir.getDirectoryHandle('chats', { create });
+}
+
+export async function listChats(paperId) {
+  try {
+    const dir = await getChatsDir(paperId);
+    const sessions = [];
+    for await (const [, fh] of dir.entries()) {
+      if (fh.kind !== 'file') continue;
+      try {
+        const txt = await (await fh.getFile()).text();
+        const s = JSON.parse(txt);
+        sessions.push(s);
+      } catch { /* 跳过损坏文件 */ }
+    }
+    sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    return sessions;
+  } catch { return []; }
+}
+
+export async function saveChat(paperId, session) {
+  const dir = await getChatsDir(paperId, true);
+  await writeFile(dir, `${session.id}.json`, JSON.stringify(session, null, 2));
+}
+
+export async function deleteChat(paperId, chatId) {
+  try {
+    const dir = await getChatsDir(paperId);
+    await dir.removeEntry(`${chatId}.json`);
+  } catch { /* 忽略 */ }
+}

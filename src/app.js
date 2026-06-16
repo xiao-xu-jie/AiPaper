@@ -24,8 +24,15 @@ const CFG = {
 
 // ---------- 全局状态 ----------
 const state = {
-  papers: [],        // 历史论文 meta 列表
-  currentId: null,   // 当前选中的 paperId
+  papers: [],
+  currentId: null,
+  chat: {            // 当前活跃会话
+    id: null,
+    title: '新对话',
+    messages: [],    // { role, content }[]
+    createdAt: null,
+    updatedAt: null,
+  },
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -130,19 +137,22 @@ function bindEvents() {
   $('#view-pdf').addEventListener('click', () => switchView('pdf'));
 
   // 对话面板
-  $('#toggle-chat').addEventListener('click', () => {
+  $('#toggle-chat').addEventListener('click', async () => {
     const open = $('#chat-panel').style.display === 'flex';
-    $('#chat-panel').style.display = open ? 'none' : 'flex';
-    $('#resizer-right').style.display = open ? 'none' : '';
+    if (open) {
+      $('#chat-panel').style.display = 'none';
+      $('#resizer-right').style.display = 'none';
+    } else {
+      await openChatPanel();
+    }
   });
   $('#chat-close').addEventListener('click', () => {
     $('#chat-panel').style.display = 'none';
     $('#resizer-right').style.display = 'none';
   });
-  $('#chat-clear').addEventListener('click', () => {
-    agent.clearHistory();
-    $('#chat-messages').innerHTML = '';
-  });
+  $('#chat-sessions-btn').addEventListener('click', () => showSessionPicker());
+  $('#chat-new').addEventListener('click', () => createNewSession());
+  $('#chat-title').addEventListener('dblclick', startEditTitle);
   $('#chat-send').addEventListener('click', sendChatMessage);
   $('#chat-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
@@ -378,7 +388,7 @@ async function openPaper(id) {
   const md = await store.loadMarkdown(id).catch(() => null);
   if (md) {
     await renderMarkdown(mdBox, md, id);
-    agent.setContext(md); // 更新 AI 上下文
+    agent.setContext(md);
   } else {
     agent.setContext('');
     mdBox.innerHTML = m.state === 'failed'
@@ -422,7 +432,143 @@ function fmtDate(ts) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// ---------- 对话面板 ----------
+// ---------- 对话面板 & 多会话 ----------
+
+function chatSessionId() {
+  return 'chat_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 5);
+}
+
+// 打开 chat 面板：有历史会话则弹选择器，否则直接新建
+async function openChatPanel() {
+  if (!state.currentId) return;
+  const sessions = await store.listChats(state.currentId);
+  if (sessions.length === 0) {
+    await createNewSession();
+  } else {
+    showSessionPicker(sessions);
+  }
+  $('#chat-panel').style.display = 'flex';
+  $('#resizer-right').style.display = '';
+}
+
+function createNewSession(sessions) {
+  const idx = (sessions ? sessions.length : 0) + 1;
+  state.chat = {
+    id: chatSessionId(),
+    title: `对话 ${idx}`,
+    messages: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  renderChatPanel();
+  persistChat();
+}
+
+// 加载并渲染某个会话
+function loadSession(session) {
+  state.chat = { ...session };
+  renderChatPanel();
+  $('#session-picker').style.display = 'none';
+}
+
+function renderChatPanel() {
+  $('#chat-title').textContent = state.chat.title;
+  const box = $('#chat-messages');
+  box.innerHTML = '';
+  for (const msg of state.chat.messages) {
+    const text = Array.isArray(msg.content)
+      ? msg.content.find((c) => c.type === 'text')?.text || ''
+      : msg.content;
+    const bubble = appendChatMsg(msg.role, text);
+    // 图片还原显示
+    if (Array.isArray(msg.content)) {
+      msg.content.filter((c) => c.type === 'image_url').forEach((c) => {
+        const img = document.createElement('img');
+        img.src = c.image_url.url;
+        img.className = 'chat-sent-img';
+        bubble.appendChild(img);
+      });
+    }
+    if (msg.role === 'assistant') {
+      bubble.innerHTML = window.marked ? window.marked.parse(text) : escapeHtml(text);
+    }
+  }
+}
+
+function persistChat() {
+  if (!state.currentId || !state.chat.id) return;
+  state.chat.updatedAt = Date.now();
+  store.saveChat(state.currentId, { ...state.chat }).catch(() => {});
+}
+
+// 会话选择器弹窗
+async function showSessionPicker(sessions) {
+  const list = sessions || await store.listChats(state.currentId);
+  const ul = $('#sp-list');
+  ul.innerHTML = list.map((s) => `
+    <li class="sp-item" data-id="${s.id}">
+      <div class="sp-item-info">
+        <div class="sp-item-title">${escapeHtml(s.title)}</div>
+        <div class="sp-item-date">${fmtDate(s.updatedAt || s.createdAt)}</div>
+      </div>
+      <button class="sp-item-del" data-del="${s.id}" title="删除">✕</button>
+    </li>`).join('');
+
+  ul.querySelectorAll('.sp-item').forEach((li) => {
+    li.addEventListener('click', (e) => {
+      if (e.target.dataset.del) return;
+      const s = list.find((x) => x.id === li.dataset.id);
+      if (s) loadSession(s);
+    });
+  });
+  ul.querySelectorAll('[data-del]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await store.deleteChat(state.currentId, btn.dataset.del);
+      const updated = await store.listChats(state.currentId);
+      if (!updated.length) {
+        $('#session-picker').style.display = 'none';
+        await createNewSession();
+      } else {
+        showSessionPicker(updated);
+      }
+    });
+  });
+
+  $('#sp-new').onclick = async () => {
+    $('#session-picker').style.display = 'none';
+    const all = await store.listChats(state.currentId);
+    createNewSession(all);
+  };
+  $('#sp-close').onclick = () => { $('#session-picker').style.display = 'none'; };
+  $('#session-picker').style.display = 'flex';
+}
+
+// 标题内联编辑
+function startEditTitle() {
+  const titleEl = $('#chat-title');
+  const input = document.createElement('input');
+  input.className = 'chat-title-input';
+  input.value = state.chat.title;
+  titleEl.replaceWith(input);
+  input.focus();
+  input.select();
+  const commit = () => {
+    const newTitle = input.value.trim() || state.chat.title;
+    state.chat.title = newTitle;
+    persistChat();
+    const span = document.createElement('span');
+    span.id = 'chat-title';
+    span.className = 'chat-title';
+    span.title = '双击编辑标题';
+    span.textContent = newTitle;
+    span.addEventListener('dblclick', startEditTitle);
+    input.replaceWith(span);
+  };
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+}
+
 function appendChatMsg(role, text) {
   const box = $('#chat-messages');
   const div = document.createElement('div');
@@ -434,7 +580,7 @@ function appendChatMsg(role, text) {
 }
 
 let chatBusy = false;
-let pendingImages = []; // base64 data URLs waiting to be sent
+let pendingImages = [];
 
 function onChatPaste(e) {
   const items = [...(e.clipboardData?.items || [])];
@@ -444,10 +590,7 @@ function onChatPaste(e) {
   imgItems.forEach((item) => {
     const blob = item.getAsFile();
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      pendingImages.push(ev.target.result);
-      renderPendingImages();
-    };
+    reader.onload = (ev) => { pendingImages.push(ev.target.result); renderPendingImages(); };
     reader.readAsDataURL(blob);
   });
 }
@@ -464,10 +607,7 @@ function renderPendingImages() {
     `<div class="chat-img-thumb"><img src="${src}" /><button data-idx="${i}">✕</button></div>`
   ).join('');
   bar.querySelectorAll('button').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      pendingImages.splice(+btn.dataset.idx, 1);
-      renderPendingImages();
-    });
+    btn.addEventListener('click', () => { pendingImages.splice(+btn.dataset.idx, 1); renderPendingImages(); });
   });
   if (!pendingImages.length) bar.remove();
 }
@@ -483,12 +623,18 @@ async function sendChatMessage() {
   pendingImages = [];
   renderPendingImages();
 
-  // 用户气泡：文字 + 图片缩略图
+  // 构造 user content
+  const userContent = images.length
+    ? [{ type: 'text', text: msg || ' ' }, ...images.map((b64) => ({ type: 'image_url', image_url: { url: b64 } }))]
+    : msg;
+
+  // 追加到会话
+  state.chat.messages.push({ role: 'user', content: userContent });
+
   const userBubble = appendChatMsg('user', msg);
   images.forEach((src) => {
     const img = document.createElement('img');
-    img.src = src;
-    img.className = 'chat-sent-img';
+    img.src = src; img.className = 'chat-sent-img';
     userBubble.appendChild(img);
   });
 
@@ -499,13 +645,18 @@ async function sendChatMessage() {
 
   let reply = '';
   try {
-    await agent.chat(msg, images, (chunk) => {
+    // history 不含刚追加的 user 消息，agent 内部会拼接
+    const history = state.chat.messages.slice(0, -1);
+    reply = await agent.chat(history, msg, images, (chunk) => {
       reply += chunk;
       bubble.innerHTML = (window.marked ? window.marked.parse(reply) : escapeHtml(reply)) + '<span class="cursor">▌</span>';
       $('#chat-messages').scrollTop = $('#chat-messages').scrollHeight;
     });
     bubble.innerHTML = window.marked ? window.marked.parse(reply) : escapeHtml(reply);
+    state.chat.messages.push({ role: 'assistant', content: reply });
+    persistChat();
   } catch (e) {
+    state.chat.messages.pop(); // 撤回失败的 user 消息
     bubble.closest('.chat-msg').classList.add('error');
     bubble.textContent = e.message;
   } finally {
@@ -541,12 +692,8 @@ function initResizer(resizerId, getTarget, startSizeFn, dir = 1) {
 window.addEventListener('DOMContentLoaded', () => {
   initResizer('resizer-left',
     () => document.querySelector('.sidebar'),
-    (el) => el.getBoundingClientRect().width,
-    1
-  );
+    (el) => el.getBoundingClientRect().width, 1);
   initResizer('resizer-right',
     () => document.getElementById('chat-panel'),
-    (el) => el.getBoundingClientRect().width,
-    -1
-  );
+    (el) => el.getBoundingClientRect().width, -1);
 });

@@ -247,3 +247,16 @@ export async function loadNote(paperId) {
   const dir = await getPaperDir(paperId);
   return readFileText(dir, 'note.md');
 }
+
+// ---------- 目录树 ----------
+export async function saveFolders(tree) {
+  assertRoot();
+  await writeFile(rootDir, '_folders.json', JSON.stringify(tree, null, 2));
+}
+
+export async function loadFolders() {
+  try {
+    const txt = await readFileText(rootDir, '_folders.json');
+    return txt ? JSON.parse(txt) : null;
+  } catch { return null; }
+}

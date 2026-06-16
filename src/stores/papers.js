@@ -23,6 +23,9 @@ export const usePapersStore = defineStore('papers', {
   actions: {
     async refresh() {
       try { this.papers = await store.listPapers(); } catch { this.papers = []; }
+      // 初始化目录树（延迟 import 避免循环依赖）
+      const { useFoldersStore } = await import('./folders.js');
+      await useFoldersStore().init(this.papers);
       if (!this.currentId && this.papers.length) await this.open(this.papers[0].id);
       this._resumeUnfinished();
     },
@@ -51,6 +54,10 @@ export const usePapersStore = defineStore('papers', {
       };
       this.papers.unshift(meta);
       this.currentId = paperId;
+
+      // 加入当前目录
+      const { useFoldersStore } = await import('./folders.js');
+      await useFoldersStore().addPaper(paperId);
 
       try {
         await store.savePdf(paperId, file);
@@ -135,6 +142,8 @@ export const usePapersStore = defineStore('papers', {
 
     async delete(paperId) {
       await store.deletePaper(paperId);
+      const { useFoldersStore } = await import('./folders.js');
+      await useFoldersStore().removePaper(paperId);
       if (this.currentId === paperId) { this.currentId = null; this.currentMd = null; }
       await this.refresh();
     },

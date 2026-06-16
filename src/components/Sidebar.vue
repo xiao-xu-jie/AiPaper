@@ -74,6 +74,7 @@ const ctx = ref({ show: false, x: 0, y: 0, id: '', type: '' });
 const showMoveMenu = ref(false);
 const confirmDialog = ref({ show: false, msg: '', onOk: () => {} });
 function showConfirm(msg, onOk) { confirmDialog.value = { show: true, msg, onOk }; }
+const renameTarget = ref(null);
 const createTarget = ref(null);
 const renameDraft = ref('');
 const renameInput = ref(null);

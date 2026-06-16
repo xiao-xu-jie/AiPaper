@@ -32,7 +32,7 @@
 import { ref, watch, computed, nextTick } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
-import { parseMarkdown, renderMarkdown, renderMath } from '../lib/render.js';
+import { parseMarkdown, renderMarkdown, renderMath, resolveImages } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import * as agent from '../lib/agent.js';
 
@@ -69,6 +69,7 @@ watch(() => papers.currentId, async (id) => {
 watch(streamText, async (text) => {
   if (!streamEl.value || papers.noteGeneratingFor !== papers.currentId) return;
   streamEl.value.innerHTML = parseMarkdown(text) + '<span class="cursor">▌</span>';
+  await resolveImages(streamEl.value, papers.currentId);
   renderMath(streamEl.value);
 });
 

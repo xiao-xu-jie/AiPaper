@@ -19,7 +19,7 @@ renderer.code = ({ text, lang }) => {
 };
 marked.use({ renderer });
 
-async function resolveImages(container, paperId) {
+export async function resolveImages(container, paperId) {
   const imgs = container.querySelectorAll('img');
   await Promise.all([...imgs].map(async (img) => {
     const src = img.getAttribute('src') || '';

@@ -5,10 +5,11 @@ import * as agent from '../lib/agent.js';
 // 非 Electron 环境（网页模式）自动使用同源代理
 function autoProxyPrefix() {
   if (typeof window === 'undefined') return '';
-  // Electron 加载 file:// 协议，不需要代理（session 已注入 CORS）
   if (window.location.protocol === 'file:') return '';
   return `${window.location.origin}/proxy?url=`;
 }
+
+const DEFAULT_NOTE_TEMPLATE = `# {{title}}
 
 ## 基本信息
 - **作者**：

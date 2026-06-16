@@ -24,12 +24,16 @@ export const useFoldersStore = defineStore('folders', {
     async init(papers) {
       const saved = await loadFolders();
       if (saved) {
-        this.tree = saved;
-        // 确保 root 存在
-        if (!this.tree.root) this.tree.root = DEFAULT_TREE.root;
+        // 用 Object.assign 保留响应式引用，避免整体替换丢失追踪
+        Object.assign(this.tree, saved);
+        // 删除 saved 中没有的旧 key
+        for (const k of Object.keys(this.tree)) {
+          if (!(k in saved)) delete this.tree[k];
+        }
+        if (!this.tree.root) Object.assign(this.tree, DEFAULT_TREE);
       } else {
-        // 首次：所有论文放入 root
-        this.tree = { root: { id: 'root', name: '全部论文', children: [], papers: papers.map((p) => p.id) } };
+        const rootPapers = papers.map((p) => p.id);
+        this.tree.root = { id: 'root', name: '全部论文', children: [], papers: rootPapers };
         await this._persist();
       }
     },

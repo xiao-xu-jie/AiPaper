@@ -106,7 +106,7 @@ export const usePapersStore = defineStore('papers', {
       const buf = await mineru.downloadZip(result.full_zip_url);
       await this._extractZip(paperId, buf);
       this._patch(paperId, { state: 'done', stateText: '已完成', progress: 100, doneAt: Date.now() });
-      window.location.reload();
+      await this.refresh();
     },
 
     async _extractZip(paperId, arrayBuffer) {
@@ -142,7 +142,8 @@ export const usePapersStore = defineStore('papers', {
       await store.deletePaper(paperId);
       const { useFoldersStore } = await import('./folders.js');
       await useFoldersStore().removePaper(paperId);
-      window.location.reload();
+      if (this.currentId === paperId) { this.currentId = null; this.currentMd = null; }
+      await this.refresh();
     },
   },
 });

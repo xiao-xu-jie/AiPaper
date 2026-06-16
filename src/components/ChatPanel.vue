@@ -16,8 +16,8 @@
           <div class="chat-bubble" :class="msgRole(msg)" v-html="renderBubble(msg)" />
         </div>
       </template>
-      <div v-if="streamingReply" class="chat-msg assistant">
-        <div class="chat-bubble assistant" v-html="parseMarkdown(streamingReply) + '<span class=\'cursor\'>▌</span>'" />
+      <div v-if="chat.busy" class="chat-msg assistant">
+        <div class="chat-bubble assistant" v-html="streamingReply ? parseMarkdown(streamingReply) + '<span class=\'cursor\'>▌</span>' : '<span class=\'cursor\'>▌</span>'" />
       </div>
     </div>
 
@@ -108,15 +108,14 @@ async function send() {
   if (!msg && !images.length) return;
   inputMsg.value = '';
   pendingImages.value = [];
-  streamingReply.value = '';
+  streamingReply.value = ' '; // 立刻显示光标占位
 
   try {
     await chat.send(msg, images, (chunk) => {
-      streamingReply.value += chunk;
+      streamingReply.value = (streamingReply.value.trim() ? streamingReply.value : '') + chunk;
       nextTick(() => { if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight; });
     });
   } catch (e) {
-    // 错误显示为 assistant 消息追加到会话里（不用 streamingReply）
     chat.session?.messages.push({ role: 'assistant', content: `[错误] ${e.message}` });
   } finally {
     streamingReply.value = '';

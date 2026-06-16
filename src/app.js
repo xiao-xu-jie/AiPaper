@@ -147,6 +147,7 @@ function bindEvents() {
   $('#chat-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
   });
+  $('#chat-input').addEventListener('paste', onChatPaste);
 }
 
 async function afterDirReady() {
@@ -433,15 +434,64 @@ function appendChatMsg(role, text) {
 }
 
 let chatBusy = false;
+let pendingImages = []; // base64 data URLs waiting to be sent
+
+function onChatPaste(e) {
+  const items = [...(e.clipboardData?.items || [])];
+  const imgItems = items.filter((i) => i.type.startsWith('image/'));
+  if (!imgItems.length) return;
+  e.preventDefault();
+  imgItems.forEach((item) => {
+    const blob = item.getAsFile();
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      pendingImages.push(ev.target.result);
+      renderPendingImages();
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+function renderPendingImages() {
+  let bar = $('#chat-img-preview');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'chat-img-preview';
+    bar.className = 'chat-img-preview';
+    $('#chat-input-wrap').insertBefore(bar, $('#chat-input'));
+  }
+  bar.innerHTML = pendingImages.map((src, i) =>
+    `<div class="chat-img-thumb"><img src="${src}" /><button data-idx="${i}">✕</button></div>`
+  ).join('');
+  bar.querySelectorAll('button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      pendingImages.splice(+btn.dataset.idx, 1);
+      renderPendingImages();
+    });
+  });
+  if (!pendingImages.length) bar.remove();
+}
 
 async function sendChatMessage() {
   if (chatBusy) return;
   const input = $('#chat-input');
   const msg = input.value.trim();
-  if (!msg) return;
+  if (!msg && !pendingImages.length) return;
   input.value = '';
 
-  appendChatMsg('user', msg);
+  const images = [...pendingImages];
+  pendingImages = [];
+  renderPendingImages();
+
+  // 用户气泡：文字 + 图片缩略图
+  const userBubble = appendChatMsg('user', msg);
+  images.forEach((src) => {
+    const img = document.createElement('img');
+    img.src = src;
+    img.className = 'chat-sent-img';
+    userBubble.appendChild(img);
+  });
+
   const bubble = appendChatMsg('assistant', '');
   bubble.textContent = '▌';
   chatBusy = true;
@@ -449,7 +499,7 @@ async function sendChatMessage() {
 
   let reply = '';
   try {
-    await agent.chat(msg, (chunk) => {
+    await agent.chat(msg, images, (chunk) => {
       reply += chunk;
       bubble.innerHTML = (window.marked ? window.marked.parse(reply) : escapeHtml(reply)) + '<span class="cursor">▌</span>';
       $('#chat-messages').scrollTop = $('#chat-messages').scrollHeight;

@@ -18,10 +18,17 @@ export function clearHistory() {
   history = [];
 }
 
-export async function chat(userMsg, onChunk) {
+export async function chat(userMsg, images = [], onChunk) {
   if (!cfg.url || !cfg.model) throw new Error('请先填写并保存 AI 接口地址和模型名称');
 
-  history.push({ role: 'user', content: userMsg });
+  // 构造 user content：有图片时用多模态数组格式
+  const userContent = images.length
+    ? [
+        { type: 'text', text: userMsg || ' ' },
+        ...images.map((b64) => ({ type: 'image_url', image_url: { url: b64 } })),
+      ]
+    : userMsg;
+  history.push({ role: 'user', content: userContent });
 
   const systemContent = paperMd
     ? `你是一个论文阅读助手。以下是当前论文的完整内容（Markdown 格式），请基于此内容回答用户问题：\n\n${paperMd}`

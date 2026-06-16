@@ -130,20 +130,23 @@ function onDrop(e) {
 }
 
 const chatPanelRef = ref(null);
+const pendingAskText = ref(null);
+const pendingAskImage = ref(null);
 
 async function toggleChat() {
   if (chatOpen.value) { chatOpen.value = false; return; }
   if (!papers.currentId) return;
-  await chatStore.loadForPaper(papers.currentId);
   agentLib.setContext(papers.currentMd || '');
-  chatOpen.value = true;
+  const needPick = await chatStore.loadForPaper(papers.currentId);
+  if (!needPick) chatOpen.value = true;
 }
 
 async function onAskText(text) {
   if (!chatOpen.value) {
     if (!papers.currentId) return;
-    await chatStore.loadForPaper(papers.currentId);
     agentLib.setContext(papers.currentMd || '');
+    const needPick = await chatStore.loadForPaper(papers.currentId);
+    if (needPick) { pendingAskText.value = text; return; }
     chatOpen.value = true;
     await nextTick();
   }
@@ -151,11 +154,11 @@ async function onAskText(text) {
 }
 
 async function onAskImage(dataUrl) {
-  // 确保聊天面板已打开
   if (!chatOpen.value) {
     if (!papers.currentId) return;
-    await chatStore.loadForPaper(papers.currentId);
     agentLib.setContext(papers.currentMd || '');
+    const needPick = await chatStore.loadForPaper(papers.currentId);
+    if (needPick) { pendingAskImage.value = dataUrl; return; }
     chatOpen.value = true;
     await nextTick();
   }
@@ -163,6 +166,22 @@ async function onAskImage(dataUrl) {
 }
 
 import { watch } from 'vue';
+
+// picker 关闭（用户选好会话）后 flush pending ask
+watch(() => chatStore.showPicker, async (val) => {
+  if (val) return; // 打开时不处理
+  if (!chatStore.session) return; // 没选，不处理
+  chatOpen.value = true;
+  await nextTick();
+  if (pendingAskText.value !== null) {
+    chatPanelRef.value?.addPrefillText(pendingAskText.value);
+    pendingAskText.value = null;
+  }
+  if (pendingAskImage.value !== null) {
+    chatPanelRef.value?.addPendingImage(pendingAskImage.value);
+    pendingAskImage.value = null;
+  }
+});
 watch(() => papers.currentId, (id) => {
   agentLib.setContext(papers.currentMd || '');
   if (chatOpen.value && id) {

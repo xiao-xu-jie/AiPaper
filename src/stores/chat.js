@@ -21,8 +21,10 @@ export const useChatStore = defineStore('chat', {
       this.sessions = await store.listChats(paperId);
       if (this.sessions.length === 0) {
         this._newSession();
+        return false; // 无需选择，直接打开
       } else {
         this.showPicker = true;
+        return true;  // 需要等用户选择
       }
     },
 

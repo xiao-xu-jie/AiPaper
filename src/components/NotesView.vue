@@ -91,6 +91,9 @@ async function generate() {
 
   const prompt = `请根据以下论文内容，严格按照给定模板生成一份详细的阅读笔记，使用 Markdown 格式输出，不要有多余解释。
 
+要求：
+- 如果论文内容中包含图片（Markdown 格式如 ![...](images/xxx.png)），请在笔记的相关位置原样嵌入对应图片引用，让笔记更直观。
+
 模板：
 ${template}
 

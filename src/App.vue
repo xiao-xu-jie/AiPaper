@@ -28,7 +28,7 @@
 
   <main v-if="dirReady" class="main" @dragover.prevent @dragenter.prevent="dropOver = true" @dragleave="dropOver = false" @drop.prevent="onDrop">
     <Sidebar />
-    <Viewer @toggleChat="toggleChat" @askImage="onAskImage" />
+    <Viewer @toggleChat="toggleChat" @askImage="onAskImage" @askText="onAskText" />
     <ChatPanel v-if="chatOpen" ref="chatPanelRef" @close="chatOpen = false" />
     <div v-if="dropOver" class="drop-zone over" />
   </main>
@@ -137,6 +137,17 @@ async function toggleChat() {
   await chatStore.loadForPaper(papers.currentId);
   agentLib.setContext(papers.currentMd || '');
   chatOpen.value = true;
+}
+
+async function onAskText(text) {
+  if (!chatOpen.value) {
+    if (!papers.currentId) return;
+    await chatStore.loadForPaper(papers.currentId);
+    agentLib.setContext(papers.currentMd || '');
+    chatOpen.value = true;
+    await nextTick();
+  }
+  chatPanelRef.value?.addPrefillText(text);
 }
 
 async function onAskImage(dataUrl) {

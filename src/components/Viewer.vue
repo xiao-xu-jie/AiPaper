@@ -29,7 +29,8 @@
   <!-- 自定义右键菜单 -->
   <Teleport to="body">
     <div v-if="ctxMenu.show" class="img-ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
-      <button @click="askAboutImage">💬 向 AI 提问此图</button>
+      <button v-if="ctxMenu.src" @click="askAboutImage">💬 向 AI 提问此图</button>
+      <button v-if="ctxMenu.text" @click="askAboutText">💬 向 AI 提问选中内容</button>
     </div>
     <div v-if="ctxMenu.show" class="ctx-backdrop" @click="ctxMenu.show = false" @contextmenu.prevent="ctxMenu.show = false" />
   </Teleport>
@@ -41,23 +42,33 @@ import { usePapersStore } from '../stores/papers.js';
 import { renderMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
 
-const emit = defineEmits(['toggleChat', 'askImage']);
+const emit = defineEmits(['toggleChat', 'askImage', 'askText']);
 const papers = usePapersStore();
 const view = ref('md');
 const mdBox = ref(null);
 const pdfFrame = ref(null);
-const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '' });
+const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '' });
 
 const paper = computed(() => papers.currentPaper);
 const title = computed(() => paper.value?.title || '未选择论文');
 
 function onContextMenu(e) {
-  if (e.target.tagName !== 'IMG') return;
+  const isImg = e.target.tagName === 'IMG';
+  const selectedText = window.getSelection()?.toString().trim() || '';
+  if (!isImg && !selectedText) return;
   e.preventDefault();
-  ctxMenu.src = e.target.src;
+  ctxMenu.src = isImg ? e.target.src : '';
+  ctxMenu.text = selectedText;
   ctxMenu.x = e.clientX;
   ctxMenu.y = e.clientY;
   ctxMenu.show = true;
+}
+  ctxMenu.show = true;
+}
+
+function askAboutText() {
+  ctxMenu.show = false;
+  emit('askText', ctxMenu.text);
 }
 
 async function askAboutImage() {

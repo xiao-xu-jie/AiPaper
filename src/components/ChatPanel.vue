@@ -172,6 +172,10 @@ defineExpose({
   addPendingImage(dataUrl) {
     pendingImages.value.push(dataUrl);
   },
+  addPrefillText(text) {
+    inputMsg.value = text;
+    nextTick(() => inputEl.value?.focus());
+  },
 });
 </script>
 

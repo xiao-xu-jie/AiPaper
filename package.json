@@ -1,0 +1,32 @@
+{
+  "name": "aipaper",
+  "version": "1.0.0",
+  "description": "基于 MinerU 的论文在线解析与 Markdown 预览工具",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "server": "node proxy.js"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.aipaper.app",
+    "productName": "AI Paper",
+    "directories": { "output": "dist" },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "files": [
+      "**/*",
+      "!node_modules/.bin/**",
+      "!.claude/**",
+      "!dist/**",
+      "!*.md"
+    ]
+  }
+}

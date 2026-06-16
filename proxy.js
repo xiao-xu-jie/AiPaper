@@ -1,0 +1,113 @@
+// proxy.js —— 可选的本地代理（零依赖，仅用 Node 内置模块）
+// 用途：当浏览器直连 mineru.net 或其 OSS 上传地址被 CORS 拦截时，
+//       前端把请求发到本代理，由它转发并补上 CORS 响应头。
+//
+// 启动：node proxy.js   （默认监听 8788 端口）
+// 前端「代理前缀」填：http://localhost:8788/proxy?url=
+//
+// 同时它也作为静态服务器托管本目录，方便用 http://localhost:8788/ 打开应用。
+
+import http from 'node:http';
+import https from 'node:https';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const PORT = process.env.PORT || 8788;
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+};
+
+function setCors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization,Content-Type,Accept');
+}
+
+// 转发请求到目标 URL，补 CORS。
+// 关键点：
+//  1) 只转发干净的必要头。浏览器特有头（sec-*、origin、referer、
+//     accept-encoding 等）会干扰阿里云 OSS 签名校验并导致连接被重置。
+//  2) OSS 直传要求【不带 Content-Type】（见 MinerU 文档），否则破坏签名。
+//     因此仅当请求体是 JSON（调用 MinerU API）时才转发 content-type。
+//  3) 先把请求体完整缓冲再转发，并对所有流加错误处理，确保代理永不崩溃。
+function handleProxy(req, res, target) {
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('error', () => {}); // 忽略客户端中断，避免抛出未处理错误
+  req.on('end', () => {
+    const body = Buffer.concat(chunks);
+    const lib = target.startsWith('https') ? https : http;
+    let u;
+    try { u = new URL(target); } catch {
+      setCors(res); res.writeHead(400); res.end('bad url'); return;
+    }
+
+    const ctype = (req.headers['content-type'] || '').toLowerCase();
+    const headers = { host: u.host };
+    if (body.length) headers['content-length'] = body.length;
+    // 仅对 JSON（MinerU API）转发 content-type；OSS 上传必须不带
+    if (ctype.includes('application/json')) headers['content-type'] = req.headers['content-type'];
+    if (req.headers.authorization) headers.authorization = req.headers.authorization;
+
+    const proxyReq = lib.request(u, { method: req.method, headers }, (proxyRes) => {
+      setCors(res);
+      res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+      proxyRes.on('error', () => res.end());
+      proxyRes.pipe(res);
+    });
+    proxyReq.on('error', (err) => {
+      setCors(res);
+      try {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ code: -1, msg: '代理转发失败: ' + err.message }));
+      } catch { /* 响应已发出 */ }
+    });
+    if (body.length) proxyReq.write(body);
+    proxyReq.end();
+  });
+}
+
+// 静态文件服务
+function handleStatic(req, res, pathname) {
+  let filePath = path.join(ROOT, decodeURIComponent(pathname));
+  if (pathname === '/' || pathname === '') filePath = path.join(ROOT, 'index.html');
+  if (!filePath.startsWith(ROOT)) { res.writeHead(403); res.end('Forbidden'); return; }
+  fs.readFile(filePath, (err, data) => {
+    if (err) { res.writeHead(404); res.end('Not Found'); return; }
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+    res.end(data);
+  });
+}
+
+const server = http.createServer((req, res) => {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+
+  if (req.method === 'OPTIONS') {
+    setCors(res);
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  if (url.pathname === '/proxy') {
+    const target = url.searchParams.get('url');
+    if (!target) { res.writeHead(400); res.end('missing url'); return; }
+    handleProxy(req, res, target);
+    return;
+  }
+
+  handleStatic(req, res, url.pathname);
+});
+
+server.listen(PORT, () => {
+  console.log(`\n  AI Paper 已启动`);
+  console.log(`  应用地址:   http://localhost:${PORT}/`);
+  console.log(`  代理前缀:   http://localhost:${PORT}/proxy?url=\n`);
+});

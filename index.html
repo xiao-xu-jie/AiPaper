@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Paper · MinerU 论文解析</title>
+  <link rel="stylesheet" href="src/styles.css" />
+  <!-- Markdown / 公式 / 代码高亮 / 解压，均走 CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/github.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/marked@14.1.3/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/highlight.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+</head>
+<body>
+  <!-- 不支持提示 -->
+  <div id="unsupported" class="overlay" style="display:none">
+    <div class="overlay-card">
+      <h2>浏览器不支持</h2>
+      <p>本应用依赖 File System Access API，请使用最新版 Chrome / Edge 打开。</p>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">📄 AI Paper <span>MinerU 在线解析</span></div>
+    <button id="upload-btn" class="btn primary">＋ 上传 PDF</button>
+    <input id="file-input" type="file" accept="application/pdf" multiple hidden />
+  </header>
+
+  <!-- 设置区 -->
+  <section class="config">
+    <div class="config-row">
+      <label>MinerU Token
+        <input id="token" type="password" placeholder="在 mineru.net API 管理页创建" />
+      </label>
+      <label>模型
+        <select id="model">
+          <option value="vlm">vlm（推荐）</option>
+          <option value="pipeline">pipeline</option>
+        </select>
+      </label>
+      <label>语言
+        <select id="lang">
+          <option value="ch">中英文</option>
+          <option value="en">英文</option>
+          <option value="japan">日文</option>
+          <option value="korean">韩文</option>
+        </select>
+      </label>
+      <label>代理前缀（可选，CORS 受阻时填）
+        <input id="proxy" type="text" placeholder="http://localhost:8788/proxy?url=" />
+      </label>
+    </div>
+    <div class="config-row">
+      <label>AI 接口地址
+        <input id="ai-url" type="text" placeholder="https://api.openai.com/v1" />
+      </label>
+      <label>AI 模型
+        <input id="ai-model" type="text" placeholder="gpt-4o" />
+      </label>
+      <label>AI 密钥
+        <input id="ai-key" type="password" placeholder="sk-..." />
+      </label>
+      <button id="save-config" class="btn">保存设置</button>
+      <button id="pick-dir" class="btn">📁 选择数据文件夹</button>
+    </div>
+  </section>
+
+  <!-- 恢复历史授权条 -->
+  <div id="restore-bar" class="restore-bar" style="display:none">
+    <span>检测到上次使用的数据文件夹，是否恢复历史数据？</span>
+    <button id="restore-grant" class="btn primary small">恢复</button>
+  </div>
+
+  <!-- 未选目录提示 -->
+  <div id="need-dir" class="need-dir">
+    <div class="nd-card">
+      <h2>开始使用</h2>
+      <ol>
+        <li>填写 MinerU Token 并点「保存设置」</li>
+        <li>点「选择数据文件夹」指定本地存储位置</li>
+        <li>上传 PDF 论文，等待解析完成即可在线预览</li>
+      </ol>
+      <p class="hint">所有数据（原文、Markdown、图片）都保存在你选择的文件夹中，下次自动加载。</p>
+    </div>
+  </div>
+
+  <!-- 主体：左侧论文列表 + 右侧预览 -->
+  <main id="main" class="main" style="display:none">
+    <aside class="sidebar">
+      <div class="sidebar-head">历史论文</div>
+      <ul id="paper-list" class="paper-list"></ul>
+    </aside>
+
+    <section class="viewer">
+      <div class="viewer-head">
+        <h1 id="viewer-title">未选择论文</h1>
+        <div class="view-tabs">
+          <button id="view-md" class="tab active">Markdown</button>
+          <button id="view-pdf" class="tab">原文 PDF</button>
+        </div>
+        <button id="toggle-chat" class="btn small">💬 AI 助手</button>
+      </div>
+
+      <div id="status-bar" class="status-bar" style="display:none">
+        <span id="status-text">处理中...</span>
+        <div class="progress"><div id="status-fill" class="progress-fill"></div></div>
+      </div>
+
+      <div class="viewer-body">
+        <article id="md-view" class="md-view markdown-body">
+          <div class="placeholder">选择或上传一篇论文以查看解析结果</div>
+        </article>
+        <div id="pdf-wrap" class="pdf-wrap" style="display:none">
+          <iframe id="pdf-view" title="PDF 预览"></iframe>
+        </div>
+      </div>
+    </section>
+
+    <!-- 拖拽区覆盖整个主体 -->
+    <div id="drop-zone" class="drop-zone"></div>
+
+    <!-- AI 对话面板 -->
+    <aside id="chat-panel" class="chat-panel">
+      <div class="chat-head">
+        <span>AI 助手</span>
+        <button id="chat-clear" class="btn small">清空</button>
+        <button id="chat-close" class="btn small">✕</button>
+      </div>
+      <div id="chat-messages" class="chat-messages"></div>
+      <div class="chat-input-wrap">
+        <textarea id="chat-input" rows="3" placeholder="向 AI 提问（Shift+Enter 换行，Enter 发送）"></textarea>
+        <button id="chat-send" class="btn primary">发送</button>
+      </div>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:mineru.net)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "Bash(npm -v)",
+      "Bash(node proxy.js)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('  转发后 Content-Type:', j.headers['Content-Type'], '| body:', JSON.stringify\\(j.json\\)\\)}\\)\")",
+      "Bash(curl -s -o /dev/null -w \"  首页 HTTP %{http_code}\\\\n\" http://localhost:8788/)",
+      "Bash(npm install *)",
+      "Bash(node -e \"import\\('./main.js'\\)\")",
+      "Bash(npx electron *)",
+      "Bash(node --input-type=module)",
+      "Bash(node --input-type=module --eval \"import './src/store.js'; import './src/mineru.js'; import './src/render.js';\")",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git rm *)",
+      "Bash(git commit -m '✨ feat: convert to Electron app with AI chat panel *)"
+    ]
+  }
+}

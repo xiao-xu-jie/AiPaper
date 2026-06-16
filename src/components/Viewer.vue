@@ -41,7 +41,7 @@
 </template>
 
 <script setup>
-import { ref, watch, computed, reactive } from 'vue';
+import { ref, watch, computed, reactive, nextTick } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { renderMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
@@ -92,18 +92,27 @@ async function askAboutImage() {
   emit('askImage', dataUrl);
 }
 
-watch(() => papers.currentMd, async (md) => {
-  if (!mdBox.value) return;
-  if (md && paper.value?.state === 'done') {
-    await renderMarkdown(mdBox.value, md, papers.currentId);
+watch(() => papers.currentId, async (id) => {
+  view.value = 'md';
+  if (!id) return;
+  // 渲染 markdown
+  await nextTick();
+  if (mdBox.value && papers.currentMd && papers.currentPaper?.state === 'done') {
+    await renderMarkdown(mdBox.value, papers.currentMd, id);
+  } else if (mdBox.value) {
+    mdBox.value.innerHTML = '';
+  }
+  // 加载 PDF
+  if (pdfFrame.value) {
+    const url = await store.getPdfUrl(id).catch(() => null);
+    pdfFrame.value.src = url || 'about:blank';
   }
 });
 
-watch(() => papers.currentId, async (id) => {
-  view.value = 'md';
-  if (!id || !pdfFrame.value) return;
-  const url = await store.getPdfUrl(id).catch(() => null);
-  pdfFrame.value.src = url || 'about:blank';
+// currentMd 变化时（解析完成）补充渲染
+watch(() => papers.currentMd, async (md) => {
+  if (!mdBox.value || !md || papers.currentPaper?.state !== 'done') return;
+  await renderMarkdown(mdBox.value, md, papers.currentId);
 });
 </script>
 

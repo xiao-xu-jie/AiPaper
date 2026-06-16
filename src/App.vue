@@ -81,8 +81,14 @@ onMounted(async () => {
     if (store.getRoot()) {
       await afterDirReady();
     } else {
-      restoreHandle.value = handle;
-      window.__pendingHandle = handle;
+      // 尝试静默恢复权限（部分浏览器/Electron 支持无手势授权）
+      const ok = await store.ensurePermission(handle).catch(() => false);
+      if (ok) {
+        await afterDirReady();
+      } else {
+        restoreHandle.value = handle;
+        window.__pendingHandle = handle;
+      }
     }
   }
 });

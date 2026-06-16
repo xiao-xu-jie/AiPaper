@@ -12,9 +12,10 @@ export const usePapersStore = defineStore('papers', {
     papers: [],
     currentId: null,
     currentMd: null,
-    noteGenerating: false,   // 是否正在生成笔记
-    noteStream: '',          // 流式生成中的文本
-    noteResult: null,        // key: paperId, value: 生成完成的笔记文本（跨tab保留）
+    noteGenerating: false,
+    noteStream: '',
+    noteResult: null,
+    noteGeneratingFor: null, // 正在为哪篇论文生成
   }),
   getters: {
     currentPaper: (s) => s.papers.find((p) => p.id === s.currentId) || null,

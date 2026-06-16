@@ -46,23 +46,28 @@ const previewEl = ref(null);
 const streamEl = ref(null);
 
 // generating / streamText 用 store，保证跨 tab 切换不丢失
-const generating = computed(() => papers.noteGenerating);
+const generating = computed(() => papers.noteGenerating && papers.noteGeneratingFor === papers.currentId);
 const streamText = computed(() => papers.noteStream);
 
-// 切换论文时加载对应笔记（不中断正在生成的任务）
+// 切换论文时加载对应笔记（后台生成不受影响）
 watch(() => papers.currentId, async (id) => {
-  if (papers.noteGenerating) return; // 生成中，不重置
   noteText.value = '';
   statusText.value = '';
   if (!id) return;
+  // 若正在为当前论文生成，显示进行中状态即可
+  if (papers.noteGeneratingFor === id) {
+    statusText.value = '正在生成...';
+    return;
+  }
   const saved = await store.loadNote(id).catch(() => null);
   noteText.value = saved || '';
   statusText.value = saved ? '已加载已保存笔记' : '';
+  mode.value = saved ? 'preview' : 'edit';
 }, { immediate: true });
 
-// 流式生成中：更新 DOM 并渲染数学公式
+// 流式生成中：只有当前论文就是生成目标时才更新 DOM
 watch(streamText, async (text) => {
-  if (!streamEl.value) return;
+  if (!streamEl.value || papers.noteGeneratingFor !== papers.currentId) return;
   streamEl.value.innerHTML = parseMarkdown(text) + '<span class="cursor">▌</span>';
   renderMath(streamEl.value);
 });
@@ -77,10 +82,13 @@ watch([mode, noteText], async ([m]) => {
 });
 watch(() => papers.noteGenerating, async (val) => {
   if (!val && papers.noteResult !== null) {
-    noteText.value = papers.noteResult;
+    const { paperId, text } = papers.noteResult;
     papers.noteResult = null;
-    mode.value = 'preview';
-    statusText.value = '生成完成，可继续编辑';
+    if (papers.currentId === paperId) {
+      noteText.value = text;
+      mode.value = 'preview';
+      statusText.value = '生成完成，可继续编辑';
+    }
   }
 });
 
@@ -108,7 +116,9 @@ ${template}
 论文内容（Markdown 格式）：
 ${papers.currentMd}`;
 
+  const generatingFor = papers.currentId; // 记录为哪篇生成
   papers.noteGenerating = true;
+  papers.noteGeneratingFor = generatingFor;
   papers.noteStream = '';
   statusText.value = '正在生成...';
 
@@ -116,12 +126,13 @@ ${papers.currentMd}`;
     const result = await agent.chat([], prompt, [], (chunk) => {
       papers.noteStream += chunk;
     });
-    papers.noteResult = result;
-    await store.saveNote(papers.currentId, result);
+    papers.noteResult = { paperId: generatingFor, text: result };
+    await store.saveNote(generatingFor, result);
   } catch (e) {
-    statusText.value = '生成失败：' + e.message;
+    if (papers.currentId === generatingFor) statusText.value = '生成失败：' + e.message;
   } finally {
     papers.noteGenerating = false;
+    papers.noteGeneratingFor = null;
     papers.noteStream = '';
   }
 }

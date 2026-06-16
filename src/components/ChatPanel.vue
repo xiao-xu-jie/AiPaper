@@ -10,7 +10,7 @@
       <button class="btn small" title="关闭" @click="$emit('close')">✕</button>
     </div>
 
-    <div ref="msgBox" class="chat-messages">
+    <div ref="msgBox" class="chat-messages" @click="onMsgClick">
       <template v-for="(msg, i) in chat.session?.messages" :key="i">
         <div class="chat-msg" :class="msgRole(msg)">
           <div class="chat-bubble" :class="msgRole(msg)" v-html="renderBubble(msg)" />
@@ -43,6 +43,12 @@
       <button class="btn primary" :disabled="chat.busy" @click="send">发送</button>
     </div>
   </aside>
+
+  <Teleport to="body">
+    <div v-if="previewSrc" class="img-preview-overlay" @click="previewSrc = null">
+      <img :src="previewSrc" @click.stop />
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
@@ -63,6 +69,11 @@ const inputEl = ref(null);
 const editingTitle = ref(false);
 const titleDraft = ref('');
 const titleInput = ref(null);
+const previewSrc = ref(null);
+
+function onMsgClick(e) {
+  if (e.target.tagName === 'IMG') previewSrc.value = e.target.src;
+}
 
 function startDrag(e) {
   e.preventDefault();
@@ -195,7 +206,13 @@ textarea:focus { border-color: var(--primary); }
 .chat-img-thumb { position: relative; display: inline-block; }
 .chat-img-thumb img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); }
 .chat-img-thumb button { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; border: none; background: var(--red); color: #fff; font-size: 10px; cursor: pointer; line-height: 18px; padding: 0; }
-:deep(.chat-sent-img) { max-width: 160px; border-radius: 6px; display: block; margin-top: 6px; }
+:deep(.chat-sent-img) { max-width: 160px; border-radius: 6px; display: block; margin-top: 6px; cursor: zoom-in; }
+.img-preview-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.85);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; cursor: zoom-out;
+}
+.img-preview-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; cursor: default; }
 .cursor { animation: blink .7s step-end infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 </style>

@@ -1,32 +1,53 @@
 {
   "name": "aipaper",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "基于 MinerU 的论文在线解析与 Markdown 预览工具",
   "type": "module",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --win",
+    "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env ELECTRON_START_URL=http://localhost:5173 electron .\"",
+    "build:renderer": "vite build",
+    "build": "vite build && electron-builder --win",
     "server": "node proxy.js"
   },
   "license": "MIT",
+  "dependencies": {
+    "highlight.js": "^11.10.0",
+    "jszip": "^3.10.1",
+    "katex": "^0.16.11",
+    "marked": "^14.1.3",
+    "pinia": "^2.2.6",
+    "vue": "^3.5.13"
+  },
   "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "vite": "^6.0.6",
+    "wait-on": "^8.0.1"
   },
   "build": {
     "appId": "com.aipaper.app",
     "productName": "AI Paper",
-    "directories": { "output": "dist" },
+    "directories": { "output": "dist-electron" },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "AI Paper"
     },
     "files": [
-      "**/*",
+      "dist/**",
+      "main.js",
+      "preload.cjs",
       "!node_modules/.bin/**",
-      "!.claude/**",
-      "!dist/**",
-      "!*.md"
+      "!.claude/**"
     ]
   }
 }

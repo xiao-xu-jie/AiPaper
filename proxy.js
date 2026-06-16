@@ -22,6 +22,12 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.ico': 'image/x-icon',
 };
 
 function setCors(res) {
@@ -74,13 +80,23 @@ function handleProxy(req, res, target) {
   });
 }
 
-// 静态文件服务
+const DIST = path.join(ROOT, 'dist');
+
 function handleStatic(req, res, pathname) {
-  let filePath = path.join(ROOT, decodeURIComponent(pathname));
-  if (pathname === '/' || pathname === '') filePath = path.join(ROOT, 'index.html');
-  if (!filePath.startsWith(ROOT)) { res.writeHead(403); res.end('Forbidden'); return; }
+  const base = fs.existsSync(DIST) ? DIST : ROOT;
+  let filePath = path.join(base, decodeURIComponent(pathname));
+  if (pathname === '/' || pathname === '') filePath = path.join(base, 'index.html');
+  if (!filePath.startsWith(base)) { res.writeHead(403); res.end('Forbidden'); return; }
   fs.readFile(filePath, (err, data) => {
-    if (err) { res.writeHead(404); res.end('Not Found'); return; }
+    if (err) {
+      const indexFile = path.join(base, 'index.html');
+      fs.readFile(indexFile, (err2, d) => {
+        if (err2) { res.writeHead(404); res.end('Not Found'); return; }
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(d);
+      });
+      return;
+    }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
     res.end(data);
   });

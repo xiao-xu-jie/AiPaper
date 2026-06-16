@@ -18,7 +18,12 @@
       "Bash(git rm *)",
       "Bash(git commit -m '✨ feat: convert to Electron app with AI chat panel *)",
       "Bash(git commit *)",
-      "Bash(node --input-type=module --eval ' *)"
+      "Bash(node --input-type=module --eval ' *)",
+      "Bash(git checkout *)",
+      "Bash(npx vite *)",
+      "Bash(python3 *)",
+      "Bash(powershell *)",
+      "Bash(npm run *)"
     ]
   }
 }

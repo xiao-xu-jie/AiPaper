@@ -1,0 +1,67 @@
+import { defineStore } from 'pinia';
+import * as mineru from '../lib/mineru.js';
+import * as agent from '../lib/agent.js';
+
+// 非 Electron 环境（网页模式）自动使用同源代理
+function autoProxyPrefix() {
+  if (typeof window === 'undefined') return '';
+  // Electron：file:// 协议（生产）或含 Electron 的 userAgent（开发）
+  if (window.location.protocol === 'file:') return '';
+  if (navigator.userAgent.includes('Electron')) return '';
+  return `${window.location.origin}/proxy?url=`;
+}
+
+const DEFAULT_NOTE_TEMPLATE = `# {{title}}
+
+## 基本信息
+- **作者**：
+- **期刊/会议**：
+- **年份**：
+- **链接**：
+
+## 研究问题
+
+## 主要方法
+
+## 核心结论
+
+## 优缺点分析
+### 优点
+
+### 不足
+
+## 个人思考与启发
+`;
+
+export const useConfigStore = defineStore('config', {
+  state: () => ({
+    token: localStorage.getItem('mineru_token') || '',
+    model: localStorage.getItem('mineru_model') || 'vlm',
+    lang: localStorage.getItem('mineru_lang') || 'ch',
+    proxy: localStorage.getItem('mineru_proxy') || '',
+    aiUrl: localStorage.getItem('ai_url') || '',
+    aiModel: localStorage.getItem('ai_model') || '',
+    aiKey: localStorage.getItem('ai_key') || '',
+    noteTemplate: localStorage.getItem('note_template') || DEFAULT_NOTE_TEMPLATE,
+  }),
+  actions: {
+    init() {
+      const effectiveProxy = this.proxy || autoProxyPrefix();
+      mineru.setProxy(effectiveProxy);
+      agent.configure(this.aiUrl, this.aiModel, this.aiKey);
+    },
+    save() {
+      localStorage.setItem('mineru_token', this.token);
+      localStorage.setItem('mineru_model', this.model);
+      localStorage.setItem('mineru_lang', this.lang);
+      localStorage.setItem('mineru_proxy', this.proxy);
+      localStorage.setItem('ai_url', this.aiUrl);
+      localStorage.setItem('ai_model', this.aiModel);
+      localStorage.setItem('ai_key', this.aiKey);
+      localStorage.setItem('note_template', this.noteTemplate);
+      const effectiveProxy = this.proxy || autoProxyPrefix();
+      mineru.setProxy(effectiveProxy);
+      agent.configure(this.aiUrl, this.aiModel, this.aiKey);
+    },
+  },
+});

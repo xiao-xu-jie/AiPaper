@@ -63,8 +63,6 @@ function onContextMenu(e) {
   ctxMenu.y = e.clientY;
   ctxMenu.show = true;
 }
-  ctxMenu.show = true;
-}
 
 function askAboutText() {
   ctxMenu.show = false;

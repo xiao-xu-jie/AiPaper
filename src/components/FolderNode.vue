@@ -56,7 +56,7 @@ const papers = inject('papers');
 const folders = inject('folders');
 
 const node = computed(() => folders.tree[props.nodeId] || { children: [], papers: [] });
-const expanded = computed(() => folders.expanded.has(props.nodeId));
+const expanded = computed(() => !!folders.expanded[props.nodeId]);
 
 function toggle() {
   folders.activeFolderId = props.nodeId;

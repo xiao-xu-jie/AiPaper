@@ -12,8 +12,8 @@ const DEFAULT_TREE = {
 export const useFoldersStore = defineStore('folders', {
   state: () => ({
     tree: { ...DEFAULT_TREE },
-    expanded: new Set(['root']),
-    activeFolderId: 'root', // 当前选中目录（上传时用）
+    expanded: { root: true }, // 用对象替代 Set，避免 Pinia 响应式问题
+    activeFolderId: 'root',
   }),
 
   getters: {
@@ -35,15 +35,14 @@ export const useFoldersStore = defineStore('folders', {
     },
 
     toggle(id) {
-      if (this.expanded.has(id)) this.expanded.delete(id);
-      else this.expanded.add(id);
+      this.expanded[id] = !this.expanded[id];
     },
 
     async createFolder(parentId, name) {
       const id = folderId();
       this.tree[id] = { id, name, children: [], papers: [] };
       this.tree[parentId].children.push(id);
-      this.expanded.add(parentId);
+      this.expanded[parentId] = true;
       await this._persist();
       return id;
     },

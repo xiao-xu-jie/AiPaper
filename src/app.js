@@ -150,7 +150,7 @@ function bindEvents() {
 }
 
 async function afterDirReady() {
-  $('#main').style.display = 'grid';
+  $('#main').style.display = 'flex';
   $('#need-dir').style.display = 'none';
   await refreshPaperList();
 }

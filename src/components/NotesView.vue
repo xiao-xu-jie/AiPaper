@@ -32,7 +32,7 @@
 import { ref, watch, computed, nextTick } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
-import { parseMarkdown, renderMarkdown, renderMath, resolveImages } from '../lib/render.js';
+import { parseMarkdown, renderMarkdown, renderMath } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import * as agent from '../lib/agent.js';
 
@@ -66,12 +66,29 @@ watch(() => papers.currentId, async (id) => {
 }, { immediate: true });
 
 // 流式生成中：只有当前论文就是生成目标时才更新 DOM
+const imgCache = new Map(); // rel path → object URL，避免重复请求导致图片闪烁
+
 watch(streamText, async (text) => {
   if (!streamEl.value || papers.noteGeneratingFor !== papers.currentId) return;
   streamEl.value.innerHTML = parseMarkdown(text) + '<span class="cursor">▌</span>';
-  await resolveImages(streamEl.value, papers.currentId);
+  // 用缓存替换已知图片，未缓存的异步获取后存入缓存
+  const imgs = streamEl.value.querySelectorAll('img');
+  await Promise.all([...imgs].map(async (img) => {
+    const src = img.getAttribute('src') || '';
+    if (/^(https?:|data:|blob:)/i.test(src)) return;
+    const rel = src.replace(/^\.?\//, '');
+    if (!imgCache.has(rel)) {
+      const { getAssetUrl } = await import('../lib/store.js');
+      const url = await getAssetUrl(papers.currentId, rel);
+      if (url) imgCache.set(rel, url);
+    }
+    if (imgCache.has(rel)) img.src = imgCache.get(rel);
+    img.loading = 'lazy';
+  }));
   renderMath(streamEl.value);
 });
+
+watch(() => papers.currentId, () => { imgCache.clear(); }, { flush: 'sync' });
 
 // 预览时用 renderMarkdown 替换图片路径
 watch([mode, noteText], async ([m]) => {

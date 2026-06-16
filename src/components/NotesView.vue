@@ -22,17 +22,17 @@
     />
     <article
       v-if="!generating && mode === 'preview'"
+      ref="previewEl"
       class="notes-preview markdown-body"
-      v-html="parseMarkdown(noteText)"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, nextTick } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
-import { parseMarkdown } from '../lib/render.js';
+import { parseMarkdown, renderMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import * as agent from '../lib/agent.js';
 
@@ -42,6 +42,7 @@ const cfg = useConfigStore();
 const noteText = ref('');
 const mode = ref('edit');
 const statusText = ref('');
+const previewEl = ref(null);
 
 // generating / streamText 用 store，保证跨 tab 切换不丢失
 const generating = computed(() => papers.noteGenerating);
@@ -58,7 +59,14 @@ watch(() => papers.currentId, async (id) => {
   statusText.value = saved ? '已加载已保存笔记' : '';
 }, { immediate: true });
 
-// 生成完成后将结果同步到本地 noteText
+// 预览时用 renderMarkdown 替换图片路径
+watch([mode, noteText], async ([m]) => {
+  if (m !== 'preview' || !papers.currentId) return;
+  await nextTick();
+  if (previewEl.value) {
+    await renderMarkdown(previewEl.value, noteText.value, papers.currentId);
+  }
+});
 watch(() => papers.noteGenerating, async (val) => {
   if (!val && papers.noteResult !== null) {
     noteText.value = papers.noteResult;

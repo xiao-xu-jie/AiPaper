@@ -24,24 +24,61 @@
     </div>
     <div class="config-row">
       <label>AI 接口地址
-        <input v-model="cfg.aiUrl" type="text" placeholder="https://api.openai.com/v1" />
-      </label>
-      <label>AI 模型
-        <input v-model="cfg.aiModel" type="text" placeholder="gpt-4o" />
+        <input v-model="cfg.aiUrl" type="text" placeholder="https://api.openai.com/v1" @blur="fetchModels" />
       </label>
       <label>AI 密钥
-        <input v-model="cfg.aiKey" type="password" placeholder="sk-..." />
+        <input v-model="cfg.aiKey" type="password" placeholder="sk-..." @blur="fetchModels" />
+      </label>
+      <label>AI 模型
+        <div class="model-input-wrap">
+          <select v-if="models.length" v-model="cfg.aiModel" class="model-select">
+            <option value="">-- 选择模型 --</option>
+            <option v-for="m in models" :key="m.id" :value="m.id">{{ m.id }}</option>
+          </select>
+          <input v-else v-model="cfg.aiModel" type="text" placeholder="gpt-4o" />
+          <button class="btn-icon" :class="{ loading: fetching }" title="获取模型列表" @click="fetchModels">↻</button>
+        </div>
       </label>
       <button class="btn" @click="cfg.save()">保存设置</button>
       <button class="btn" @click="$emit('pickDir')">📁 选择数据文件夹</button>
     </div>
+    <div v-if="fetchError" class="fetch-error">{{ fetchError }}</div>
   </section>
 </template>
 
 <script setup>
+import { ref } from 'vue';
 import { useConfigStore } from '../stores/config.js';
+
 const cfg = useConfigStore();
 defineEmits(['pickDir']);
+
+const models = ref([]);
+const fetching = ref(false);
+const fetchError = ref('');
+
+async function fetchModels() {
+  const url = cfg.aiUrl.trim().replace(/\/$/, '');
+  if (!url) return;
+  fetching.value = true;
+  fetchError.value = '';
+  try {
+    const res = await fetch(`${url}/models`, {
+      headers: cfg.aiKey ? { Authorization: `Bearer ${cfg.aiKey}` } : {},
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      fetchError.value = json?.error?.message || `获取失败 (${res.status})`;
+      return;
+    }
+    models.value = (json.data || []).sort((a, b) => a.id.localeCompare(b.id));
+    // 已保存的模型若不在列表里也保留为当前值
+  } catch (e) {
+    fetchError.value = '请求失败：' + e.message;
+  } finally {
+    fetching.value = false;
+  }
+}
 </script>
 
 <style scoped>
@@ -68,5 +105,16 @@ input, select {
   color: var(--text);
   background: #fff;
 }
-input[type="password"], input[placeholder*="api"], input[placeholder*="sk-"] { min-width: 220px; }
+input[type="password"] { min-width: 220px; }
+.model-input-wrap { display: flex; gap: 4px; align-items: center; }
+.model-select { min-width: 180px; }
+.btn-icon {
+  border: 1px solid var(--border); background: var(--panel); border-radius: 7px;
+  cursor: pointer; font-size: 16px; padding: 5px 9px; color: var(--text); transition: .15s;
+}
+.btn-icon:hover { background: #f0f1f3; }
+.btn-icon.loading { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.fetch-error { margin-top: 6px; font-size: 12px; color: var(--red); }
 </style>
+

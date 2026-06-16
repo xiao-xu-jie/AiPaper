@@ -29,7 +29,7 @@
 
   <main v-if="dirReady" class="main" @dragover.prevent @dragenter.prevent="dropOver = true" @dragleave="dropOver = false" @drop.prevent="onDrop">
     <Sidebar />
-    <Viewer @toggleChat="toggleChat" @askImage="onAskImage" @askText="onAskText" />
+    <Viewer :key="papers.currentId" @toggleChat="toggleChat" @askImage="onAskImage" @askText="onAskText" />
     <ChatPanel v-if="chatOpen" ref="chatPanelRef" @close="chatOpen = false" />
     <div v-if="dropOver" class="drop-zone over" />
   </main>

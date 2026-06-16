@@ -41,14 +41,13 @@
 </template>
 
 <script setup>
-import { ref, watch, computed, reactive, nextTick } from 'vue';
+import { ref, computed, reactive, onMounted } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { renderMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import NotesView from './NotesView.vue';
 
 const papers = usePapersStore();
-
 const emit = defineEmits(['toggleChat', 'askImage', 'askText']);
 const view = ref('md');
 const mdBox = ref(null);
@@ -57,6 +56,20 @@ const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '' });
 
 const paper = computed(() => papers.currentPaper);
 const title = computed(() => paper.value?.title || '未选择论文');
+
+// 组件挂载时（key变化后重建）直接加载当前论文
+onMounted(async () => {
+  const id = papers.currentId;
+  if (!id) return;
+  const md = await store.loadMarkdown(id).catch(() => null);
+  if (md && mdBox.value && paper.value?.state === 'done') {
+    await renderMarkdown(mdBox.value, md, id);
+  }
+  if (pdfFrame.value) {
+    const url = await store.getPdfUrl(id).catch(() => null);
+    pdfFrame.value.src = url || 'about:blank';
+  }
+});
 
 function onContextMenu(e) {
   const isImg = e.target.tagName === 'IMG';
@@ -77,7 +90,6 @@ function askAboutText() {
 
 async function askAboutImage() {
   ctxMenu.show = false;
-  // 把 img src（object URL 或 data URL）转成 base64 data URL
   const src = ctxMenu.src;
   let dataUrl = src;
   if (!src.startsWith('data:')) {
@@ -85,33 +97,13 @@ async function askAboutImage() {
     const blob = await res.blob();
     dataUrl = await new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
+      reader.onload = (ev) => resolve(ev.target.result);
       reader.readAsDataURL(blob);
     });
   }
   emit('askImage', dataUrl);
 }
-
-// currentId 变化：重置 tab，加载 PDF
-watch(() => papers.currentId, async (id) => {
-  view.value = 'md';
-  if (!id) return;
-  if (pdfFrame.value) {
-    const url = await store.getPdfUrl(id).catch(() => null);
-    pdfFrame.value.src = url || 'about:blank';
-  }
-});
-
-// currentMd 变化（含 null→值、值→null、切论文后 open 完成）：渲染
-watch(() => papers.currentMd, async (md) => {
-  await nextTick();
-  if (!mdBox.value) return;
-  if (md && papers.currentPaper?.state === 'done') {
-    await renderMarkdown(mdBox.value, md, papers.currentId);
-  } else {
-    mdBox.value.innerHTML = '';
-  }
-});
+</script>
 </script>
 
 <style scoped>

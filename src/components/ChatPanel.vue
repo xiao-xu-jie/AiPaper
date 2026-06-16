@@ -14,6 +14,10 @@
       <template v-for="(msg, i) in chat.session?.messages" :key="i">
         <div class="chat-msg" :class="msgRole(msg)">
           <div class="chat-bubble" :class="msgRole(msg)" v-html="renderBubble(msg)" />
+          <div v-if="msgRole(msg) === 'assistant'" class="copy-bar">
+            <button class="copy-btn" @click="copy(msg, 'md')">复制 MD</button>
+            <button class="copy-btn" @click="copy(msg, 'text')">复制纯文本</button>
+          </div>
         </div>
       </template>
       <div v-if="chat.busy" class="chat-msg assistant">
@@ -83,10 +87,25 @@ function commitEdit() {
 
 function msgRole(msg) { return msg.role; }
 
-function renderBubble(msg) {
-  const text = Array.isArray(msg.content)
+function getMsgText(msg) {
+  return Array.isArray(msg.content)
     ? msg.content.find((c) => c.type === 'text')?.text || ''
     : msg.content;
+}
+
+function copy(msg, fmt) {
+  const md = getMsgText(msg);
+  let text = md;
+  if (fmt === 'text') {
+    const el = document.createElement('div');
+    el.innerHTML = parseMarkdown(md);
+    text = el.innerText;
+  }
+  navigator.clipboard.writeText(text);
+}
+
+function renderBubble(msg) {
+  const text = getMsgText(msg);
   if (msg.role === 'assistant') return parseMarkdown(text);
   let html = escHtml(text);
   if (Array.isArray(msg.content)) {
@@ -151,6 +170,14 @@ watch(() => chat.session?.messages?.length, () => {
 .chat-msg { display: flex; flex-direction: column; gap: 4px; max-width: 92%; }
 .chat-msg.user { align-self: flex-end; align-items: flex-end; }
 .chat-msg.assistant { align-self: flex-start; }
+.copy-bar { display: none; gap: 4px; margin-top: 4px; }
+.chat-msg:hover .copy-bar { display: flex; }
+.copy-btn {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--panel);
+  cursor: pointer; color: var(--muted); transition: .12s;
+}
+.copy-btn:hover { background: #f0f1f3; color: var(--text); }
 .chat-bubble { padding: 10px 13px; border-radius: 10px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 .chat-bubble.user { background: var(--primary); color: #fff; border-radius: 10px 2px 10px 10px; white-space: normal; }
 .chat-bubble.assistant { background: #f0f1f3; color: var(--text); border-radius: 2px 10px 10px 10px; white-space: normal; }

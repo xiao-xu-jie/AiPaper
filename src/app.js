@@ -451,7 +451,7 @@ async function sendChatMessage() {
       bubble.textContent = reply + '▌';
       $('#chat-messages').scrollTop = $('#chat-messages').scrollHeight;
     });
-    bubble.textContent = reply;
+    bubble.innerHTML = window.marked ? window.marked.parse(reply) : escapeHtml(reply);
   } catch (e) {
     bubble.closest('.chat-msg').classList.add('error');
     bubble.textContent = e.message;

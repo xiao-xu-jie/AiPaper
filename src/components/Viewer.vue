@@ -6,7 +6,7 @@
         <button class="tab" :class="{ active: view === 'md' }" @click="view = 'md'">Markdown</button>
         <button class="tab" :class="{ active: view === 'pdf' }" @click="view = 'pdf'">原文 PDF</button>
         <button class="tab" :class="{ active: view === 'notes' }" @click="view = 'notes'">
-          阅读笔记<span v-if="papers.noteGenerating" class="tab-badge">●</span>
+          阅读笔记<span v-if="papers.noteGeneratingFor === papers.currentId" class="tab-badge">●</span>
         </button>
       </div>
       <button class="btn small" @click="$emit('toggleChat')">💬 AI 助手</button>

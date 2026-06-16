@@ -116,7 +116,8 @@ async function send() {
       nextTick(() => { if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight; });
     });
   } catch (e) {
-    streamingReply.value = `[错误] ${e.message}`;
+    // 错误显示为 assistant 消息追加到会话里（不用 streamingReply）
+    chat.session?.messages.push({ role: 'assistant', content: `[错误] ${e.message}` });
   } finally {
     streamingReply.value = '';
     nextTick(() => { if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight; });

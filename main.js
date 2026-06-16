@@ -13,7 +13,7 @@ function createWindow() {
     height: 900,
     minWidth: 900,
     minHeight: 600,
-    title: 'AI Paper',
+    title: 'AI Paper - X',
     icon: path.join(__dirname, 'assets/icon.ico'),
     autoHideMenuBar: true,
     webPreferences: {

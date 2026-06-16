@@ -1,8 +1,9 @@
 <template>
   <div v-if="!supported" class="overlay">
     <div class="overlay-card">
-      <h2>浏览器不支持</h2>
-      <p>本应用依赖 File System Access API，请使用最新版 Chrome / Edge 打开。</p>
+      <h2>需要安全连接</h2>
+      <p>File System Access API 要求页面通过 <strong>HTTPS</strong> 或 <strong>localhost</strong> 访问。</p>
+      <p style="margin-top:8px">请为服务器配置 HTTPS 证书后重试，或使用 Chrome / Edge 桌面版通过 HTTPS 访问。</p>
     </div>
   </div>
 

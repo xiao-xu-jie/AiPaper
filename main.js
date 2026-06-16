@@ -35,7 +35,12 @@ function createWindow() {
     }
   });
 
-  win.loadFile('index.html');
+  const devUrl = process.env.ELECTRON_START_URL;
+  if (devUrl) {
+    win.loadURL(devUrl);
+  } else {
+    win.loadFile(path.join(__dirname, 'dist/index.html'));
+  }
 }
 
 app.whenReady().then(createWindow);

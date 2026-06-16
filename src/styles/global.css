@@ -1,0 +1,25 @@
+/* 全局 CSS 变量 + reset */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --border: #e3e6ea;
+  --text: #1f2328;
+  --muted: #6b7280;
+  --primary: #3b5bdb;
+  --primary-dark: #2f49b0;
+  --green: #2f9e44;
+  --red: #e03131;
+  --orange: #e8770e;
+  --shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+body {
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#app { display: contents; }

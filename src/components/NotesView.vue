@@ -11,7 +11,7 @@
     </div>
 
     <div v-if="generating" class="notes-generating">
-      <div class="gen-bubble markdown-body" v-html="parseMarkdown(streamText) + '<span class=\'cursor\'>▌</span>'" />
+      <div ref="streamEl" class="gen-bubble markdown-body" />
     </div>
 
     <textarea
@@ -21,7 +21,7 @@
       placeholder="尚无笔记，点击「AI 生成笔记」自动生成，或直接在此编辑..."
     />
     <article
-      v-if="!generating && mode === 'preview'"
+      v-show="!generating && mode === 'preview'"
       ref="previewEl"
       class="notes-preview markdown-body"
     />
@@ -32,7 +32,7 @@
 import { ref, watch, computed, nextTick } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
-import { parseMarkdown, renderMarkdown } from '../lib/render.js';
+import { parseMarkdown, renderMarkdown, renderMath } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import * as agent from '../lib/agent.js';
 
@@ -43,6 +43,7 @@ const noteText = ref('');
 const mode = ref('edit');
 const statusText = ref('');
 const previewEl = ref(null);
+const streamEl = ref(null);
 
 // generating / streamText 用 store，保证跨 tab 切换不丢失
 const generating = computed(() => papers.noteGenerating);
@@ -58,6 +59,13 @@ watch(() => papers.currentId, async (id) => {
   noteText.value = saved || '';
   statusText.value = saved ? '已加载已保存笔记' : '';
 }, { immediate: true });
+
+// 流式生成中：更新 DOM 并渲染数学公式
+watch(streamText, async (text) => {
+  if (!streamEl.value) return;
+  streamEl.value.innerHTML = parseMarkdown(text) + '<span class="cursor">▌</span>';
+  renderMath(streamEl.value);
+});
 
 // 预览时用 renderMarkdown 替换图片路径
 watch([mode, noteText], async ([m]) => {

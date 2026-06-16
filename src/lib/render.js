@@ -58,3 +58,5 @@ export async function renderMarkdown(container, mdText, paperId) {
 export function parseMarkdown(mdText) {
   return marked.parse(mdText);
 }
+
+export { renderMath };

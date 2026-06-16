@@ -39,7 +39,9 @@
           <button class="btn-icon" :class="{ loading: fetching }" title="获取模型列表" @click="fetchModels">↻</button>
         </div>
       </label>
-      <button class="btn" @click="cfg.save()">保存设置</button>
+      <button class="btn" :class="{ unsaved: dirty }" @click="cfg.save(); dirty = false">
+        保存设置{{ dirty ? ' *' : '' }}
+      </button>
       <button class="btn" @click="$emit('pickDir')">📁 选择数据文件夹</button>
       <button class="btn" @click="showTemplate = !showTemplate">📝 笔记模板</button>
     </div>
@@ -52,12 +54,19 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { useConfigStore } from '../stores/config.js';
 
 const cfg = useConfigStore();
 defineEmits(['pickDir']);
 const showTemplate = ref(false);
+const dirty = ref(false);
+
+// 监听所有配置字段变化
+watch(
+  () => [cfg.token, cfg.model, cfg.lang, cfg.proxy, cfg.aiUrl, cfg.aiModel, cfg.aiKey, cfg.noteTemplate],
+  () => { dirty.value = true; }
+);
 
 const models = ref([]);
 const fetching = ref(false);
@@ -122,6 +131,7 @@ input[type="password"] { min-width: 220px; }
 .btn-icon.loading { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .fetch-error { margin-top: 6px; font-size: 12px; color: var(--red); }
+.btn.unsaved { border-color: var(--orange); color: var(--orange); font-weight: 600; }
 .template-editor { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .template-label { font-size: 12px; color: var(--muted); }
 .template-label code { background: #f0f1f3; padding: 1px 4px; border-radius: 3px; }

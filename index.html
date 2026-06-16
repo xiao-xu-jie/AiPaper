@@ -94,6 +94,8 @@
       <ul id="paper-list" class="paper-list"></ul>
     </aside>
 
+    <div class="resizer" id="resizer-left"></div>
+
     <section class="viewer">
       <div class="viewer-head">
         <h1 id="viewer-title">未选择论文</h1>
@@ -122,8 +124,10 @@
     <!-- 拖拽区覆盖整个主体 -->
     <div id="drop-zone" class="drop-zone"></div>
 
+    <div class="resizer" id="resizer-right" style="display:none"></div>
+
     <!-- AI 对话面板 -->
-    <aside id="chat-panel" class="chat-panel">
+    <aside id="chat-panel" class="chat-panel" style="display:none">
       <div class="chat-head">
         <span>AI 助手</span>
         <button id="chat-clear" class="btn small">清空</button>

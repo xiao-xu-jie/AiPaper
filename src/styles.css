@@ -103,14 +103,23 @@ body {
 /* 主体布局 */
 .main {
   flex: 1;
-  display: grid;
-  grid-template-columns: 280px 1fr;
+  display: flex;
   overflow: hidden;
   position: relative;
 }
-.main.chat-open {
-  grid-template-columns: 240px 1fr 340px;
+.main .sidebar  { width: 280px; min-width: 140px; max-width: 520px; flex-shrink: 0; }
+.main .viewer   { flex: 1; min-width: 200px; overflow: hidden; }
+.main .chat-panel { width: 340px; min-width: 200px; max-width: 600px; flex-shrink: 0; }
+
+/* 拖拽分隔条 */
+.resizer {
+  width: 5px; flex-shrink: 0;
+  background: var(--border);
+  cursor: col-resize;
+  transition: background .15s;
+  z-index: 10;
 }
+.resizer:hover, .resizer.dragging { background: var(--primary); }
 
 /* 侧栏 */
 .sidebar {
@@ -246,12 +255,15 @@ body {
 
 /* AI 对话面板 */
 .chat-panel {
-  display: none;
   flex-direction: column;
   background: var(--panel);
   border-left: 1px solid var(--border);
   overflow: hidden;
+  width: 340px;
+  min-width: 200px;
+  flex-shrink: 0;
 }
+.main .chat-panel { width: 340px; min-width: 200px; flex-shrink: 0; }
 .main.chat-open .chat-panel { display: flex; }
 .chat-head {
   display: flex; align-items: center; gap: 8px;

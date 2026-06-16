@@ -131,10 +131,13 @@ function bindEvents() {
 
   // 对话面板
   $('#toggle-chat').addEventListener('click', () => {
-    $('#main').classList.toggle('chat-open');
+    const open = $('#chat-panel').style.display === 'flex';
+    $('#chat-panel').style.display = open ? 'none' : 'flex';
+    $('#resizer-right').style.display = open ? 'none' : '';
   });
   $('#chat-close').addEventListener('click', () => {
-    $('#main').classList.remove('chat-open');
+    $('#chat-panel').style.display = 'none';
+    $('#resizer-right').style.display = 'none';
   });
   $('#chat-clear').addEventListener('click', () => {
     agent.clearHistory();
@@ -460,3 +463,38 @@ async function sendChatMessage() {
     $('#chat-send').disabled = false;
   }
 }
+
+// ---------- 分隔条拖拽 ----------
+function initResizer(resizerId, getTarget, startSizeFn) {
+  const resizer = document.getElementById(resizerId);
+  resizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const target = getTarget();
+    const startX = e.clientX;
+    const startSize = startSizeFn(target);
+    resizer.classList.add('dragging');
+    const onMove = (ev) => {
+      const newSize = Math.max(140, startSize + (ev.clientX - startX));
+      target.style.width = newSize + 'px';
+      target.style.flex = 'none';
+    };
+    const onUp = () => {
+      resizer.classList.remove('dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  initResizer('resizer-left',
+    () => document.querySelector('.sidebar'),
+    (el) => el.getBoundingClientRect().width
+  );
+  initResizer('resizer-right',
+    () => document.getElementById('chat-panel'),
+    (el) => el.getBoundingClientRect().width
+  );
+});

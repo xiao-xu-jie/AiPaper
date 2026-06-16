@@ -37,7 +37,13 @@ export const useConfigStore = defineStore('config', {
   }),
   actions: {
     init() {
-      mineru.setProxy(this.proxy);
+      // 网页端：若未手动配置代理，自动使用同源代理前缀
+      if (!this.proxy && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+        const autoProxy = `${window.location.origin}/proxy?url=`;
+        mineru.setProxy(autoProxy);
+      } else {
+        mineru.setProxy(this.proxy);
+      }
       agent.configure(this.aiUrl, this.aiModel, this.aiKey);
     },
     save() {
@@ -49,7 +55,8 @@ export const useConfigStore = defineStore('config', {
       localStorage.setItem('ai_model', this.aiModel);
       localStorage.setItem('ai_key', this.aiKey);
       localStorage.setItem('note_template', this.noteTemplate);
-      mineru.setProxy(this.proxy);
+      const effectiveProxy = this.proxy || (window.location.hostname === 'localhost' ? `${window.location.origin}/proxy?url=` : '');
+      mineru.setProxy(effectiveProxy);
       agent.configure(this.aiUrl, this.aiModel, this.aiKey);
     },
   },

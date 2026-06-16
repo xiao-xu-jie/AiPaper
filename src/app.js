@@ -448,7 +448,7 @@ async function sendChatMessage() {
   try {
     await agent.chat(msg, (chunk) => {
       reply += chunk;
-      bubble.textContent = reply + '▌';
+      bubble.innerHTML = (window.marked ? window.marked.parse(reply) : escapeHtml(reply)) + '<span class="cursor">▌</span>';
       $('#chat-messages').scrollTop = $('#chat-messages').scrollHeight;
     });
     bubble.innerHTML = window.marked ? window.marked.parse(reply) : escapeHtml(reply);

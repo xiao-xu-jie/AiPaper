@@ -283,6 +283,8 @@ body {
 .chat-msg.assistant .chat-bubble ul, .chat-msg.assistant .chat-bubble ol { padding-left: 18px; margin: .4em 0; }
 .chat-msg.assistant .chat-bubble h1,.chat-msg.assistant .chat-bubble h2,.chat-msg.assistant .chat-bubble h3 { margin: .5em 0 .3em; font-size: 1em; font-weight: 600; }
 .chat-msg.error .chat-bubble { background: #fce8e8; color: var(--red); }
+.cursor { animation: blink .7s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
 .chat-input-wrap {
   padding: 12px;
   border-top: 1px solid var(--border);

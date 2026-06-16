@@ -22,8 +22,10 @@ export const usePapersStore = defineStore('papers', {
   },
   actions: {
     async refresh() {
-      try { this.papers = await store.listPapers(); } catch { this.papers = []; }
-      // 初始化目录树（延迟 import 避免循环依赖）
+      let list = [];
+      try { list = await store.listPapers(); } catch { list = []; }
+      // 就地更新，保留响应式引用
+      this.papers.splice(0, this.papers.length, ...list);
       const { useFoldersStore } = await import('./folders.js');
       await useFoldersStore().init(this.papers);
       if (!this.currentId && this.papers.length) await this.open(this.papers[0].id);

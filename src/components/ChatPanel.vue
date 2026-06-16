@@ -167,6 +167,12 @@ function onPaste(e) {
 watch(() => chat.session?.messages?.length, () => {
   nextTick(() => { if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight; });
 });
+
+defineExpose({
+  addPendingImage(dataUrl) {
+    pendingImages.value.push(dataUrl);
+  },
+});
 </script>
 
 <style scoped>

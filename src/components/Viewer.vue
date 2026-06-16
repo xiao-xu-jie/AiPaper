@@ -15,7 +15,7 @@
     </div>
 
     <div class="viewer-body">
-      <article v-show="view === 'md'" ref="mdBox" class="md-view markdown-body">
+      <article v-show="view === 'md'" ref="mdBox" class="md-view markdown-body" @contextmenu="onContextMenu">
         <div v-if="!paper" class="placeholder">选择或上传一篇论文以查看解析结果</div>
         <div v-else-if="paper.state === 'failed'" class="placeholder error">解析失败：{{ paper.error }}</div>
         <div v-else-if="paper.state !== 'done'" class="placeholder">解析完成后将在此显示 Markdown 内容</div>
@@ -25,22 +25,57 @@
       </div>
     </div>
   </section>
+
+  <!-- 自定义右键菜单 -->
+  <Teleport to="body">
+    <div v-if="ctxMenu.show" class="img-ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
+      <button @click="askAboutImage">💬 向 AI 提问此图</button>
+    </div>
+    <div v-if="ctxMenu.show" class="ctx-backdrop" @click="ctxMenu.show = false" @contextmenu.prevent="ctxMenu.show = false" />
+  </Teleport>
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, reactive } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { renderMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
 
-const emit = defineEmits(['toggleChat']);
+const emit = defineEmits(['toggleChat', 'askImage']);
 const papers = usePapersStore();
 const view = ref('md');
 const mdBox = ref(null);
 const pdfFrame = ref(null);
+const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '' });
 
 const paper = computed(() => papers.currentPaper);
 const title = computed(() => paper.value?.title || '未选择论文');
+
+function onContextMenu(e) {
+  if (e.target.tagName !== 'IMG') return;
+  e.preventDefault();
+  ctxMenu.src = e.target.src;
+  ctxMenu.x = e.clientX;
+  ctxMenu.y = e.clientY;
+  ctxMenu.show = true;
+}
+
+async function askAboutImage() {
+  ctxMenu.show = false;
+  // 把 img src（object URL 或 data URL）转成 base64 data URL
+  const src = ctxMenu.src;
+  let dataUrl = src;
+  if (!src.startsWith('data:')) {
+    const res = await fetch(src);
+    const blob = await res.blob();
+    dataUrl = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.readAsDataURL(blob);
+    });
+  }
+  emit('askImage', dataUrl);
+}
 
 watch(() => papers.currentMd, async (md) => {
   if (!mdBox.value) return;
@@ -80,4 +115,15 @@ watch(() => papers.currentId, async (id) => {
 .md-view .placeholder.error { color: var(--red); }
 .pdf-wrap { height: 100%; }
 .pdf-wrap iframe { width: 100%; height: 100%; border: none; }
+.img-ctx-menu {
+  position: fixed; z-index: 500;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); overflow: hidden;
+}
+.img-ctx-menu button {
+  display: block; width: 100%; padding: 10px 16px; border: none; background: transparent;
+  text-align: left; cursor: pointer; font-size: 14px; color: var(--text);
+}
+.img-ctx-menu button:hover { background: #f0f1f3; }
+.ctx-backdrop { position: fixed; inset: 0; z-index: 499; }
 </style>

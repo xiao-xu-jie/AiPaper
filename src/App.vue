@@ -28,8 +28,8 @@
 
   <main v-if="dirReady" class="main" @dragover.prevent @dragenter.prevent="dropOver = true" @dragleave="dropOver = false" @drop.prevent="onDrop">
     <Sidebar />
-    <Viewer @toggleChat="toggleChat" />
-    <ChatPanel v-if="chatOpen" @close="chatOpen = false" />
+    <Viewer @toggleChat="toggleChat" @askImage="onAskImage" />
+    <ChatPanel v-if="chatOpen" ref="chatPanelRef" @close="chatOpen = false" />
     <div v-if="dropOver" class="drop-zone over" />
   </main>
 
@@ -41,7 +41,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, provide } from 'vue';
+import { ref, onMounted, provide, nextTick } from 'vue';
 import TopBar from './components/TopBar.vue';
 import ConfigPanel from './components/ConfigPanel.vue';
 import Sidebar from './components/Sidebar.vue';
@@ -129,6 +129,8 @@ function onDrop(e) {
   if (files.length) onFileInput({ target: { files }, value: '' });
 }
 
+const chatPanelRef = ref(null);
+
 async function toggleChat() {
   if (chatOpen.value) { chatOpen.value = false; return; }
   if (!papers.currentId) return;
@@ -137,7 +139,18 @@ async function toggleChat() {
   chatOpen.value = true;
 }
 
-// 切换论文时更新 AI 上下文
+async function onAskImage(dataUrl) {
+  // 确保聊天面板已打开
+  if (!chatOpen.value) {
+    if (!papers.currentId) return;
+    await chatStore.loadForPaper(papers.currentId);
+    agentLib.setContext(papers.currentMd || '');
+    chatOpen.value = true;
+    await nextTick();
+  }
+  chatPanelRef.value?.addPendingImage(dataUrl);
+}
+
 import { watch } from 'vue';
 watch(() => papers.currentId, (id) => {
   agentLib.setContext(papers.currentMd || '');

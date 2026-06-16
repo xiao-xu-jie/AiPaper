@@ -465,7 +465,7 @@ async function sendChatMessage() {
 }
 
 // ---------- 分隔条拖拽 ----------
-function initResizer(resizerId, getTarget, startSizeFn) {
+function initResizer(resizerId, getTarget, startSizeFn, dir = 1) {
   const resizer = document.getElementById(resizerId);
   resizer.addEventListener('mousedown', (e) => {
     e.preventDefault();
@@ -474,7 +474,7 @@ function initResizer(resizerId, getTarget, startSizeFn) {
     const startSize = startSizeFn(target);
     resizer.classList.add('dragging');
     const onMove = (ev) => {
-      const newSize = Math.max(140, startSize + (ev.clientX - startX));
+      const newSize = Math.max(140, startSize + dir * (ev.clientX - startX));
       target.style.width = newSize + 'px';
       target.style.flex = 'none';
     };
@@ -491,10 +491,12 @@ function initResizer(resizerId, getTarget, startSizeFn) {
 window.addEventListener('DOMContentLoaded', () => {
   initResizer('resizer-left',
     () => document.querySelector('.sidebar'),
-    (el) => el.getBoundingClientRect().width
+    (el) => el.getBoundingClientRect().width,
+    1
   );
   initResizer('resizer-right',
     () => document.getElementById('chat-panel'),
-    (el) => el.getBoundingClientRect().width
+    (el) => el.getBoundingClientRect().width,
+    -1
   );
 });

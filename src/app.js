@@ -152,6 +152,7 @@ function bindEvents() {
   });
   $('#chat-sessions-btn').addEventListener('click', () => showSessionPicker());
   $('#chat-new').addEventListener('click', () => createNewSession());
+  $('#chat-rename').addEventListener('click', startEditTitle);
   $('#chat-title').addEventListener('dblclick', startEditTitle);
   $('#chat-send').addEventListener('click', sendChatMessage);
   $('#chat-input').addEventListener('keydown', (e) => {

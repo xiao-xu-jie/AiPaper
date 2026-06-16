@@ -29,7 +29,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
 import { parseMarkdown } from '../lib/render.js';
@@ -41,12 +41,15 @@ const cfg = useConfigStore();
 
 const noteText = ref('');
 const mode = ref('edit');
-const generating = ref(false);
-const streamText = ref('');
 const statusText = ref('');
 
-// 加载当前论文笔记
+// generating / streamText 用 store，保证跨 tab 切换不丢失
+const generating = computed(() => papers.noteGenerating);
+const streamText = computed(() => papers.noteStream);
+
+// 切换论文时加载对应笔记（不中断正在生成的任务）
 watch(() => papers.currentId, async (id) => {
+  if (papers.noteGenerating) return; // 生成中，不重置
   noteText.value = '';
   statusText.value = '';
   if (!id) return;
@@ -54,6 +57,16 @@ watch(() => papers.currentId, async (id) => {
   noteText.value = saved || '';
   statusText.value = saved ? '已加载已保存笔记' : '';
 }, { immediate: true });
+
+// 生成完成后将结果同步到本地 noteText
+watch(() => papers.noteGenerating, async (val) => {
+  if (!val && papers.noteResult !== null) {
+    noteText.value = papers.noteResult;
+    papers.noteResult = null;
+    mode.value = 'preview';
+    statusText.value = '生成完成，可继续编辑';
+  }
+});
 
 async function generate() {
   if (!papers.currentId || !papers.currentMd) {
@@ -76,23 +89,21 @@ ${template}
 论文内容（Markdown 格式）：
 ${papers.currentMd}`;
 
-  generating.value = true;
-  streamText.value = '';
+  papers.noteGenerating = true;
+  papers.noteStream = '';
   statusText.value = '正在生成...';
 
   try {
     const result = await agent.chat([], prompt, [], (chunk) => {
-      streamText.value += chunk;
+      papers.noteStream += chunk;
     });
-    noteText.value = result;
-    mode.value = 'preview';
-    statusText.value = '生成完成，可继续编辑';
+    papers.noteResult = result;
     await store.saveNote(papers.currentId, result);
   } catch (e) {
     statusText.value = '生成失败：' + e.message;
   } finally {
-    generating.value = false;
-    streamText.value = '';
+    papers.noteGenerating = false;
+    papers.noteStream = '';
   }
 }
 

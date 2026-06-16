@@ -5,7 +5,9 @@
       <div class="view-tabs">
         <button class="tab" :class="{ active: view === 'md' }" @click="view = 'md'">Markdown</button>
         <button class="tab" :class="{ active: view === 'pdf' }" @click="view = 'pdf'">原文 PDF</button>
-        <button class="tab" :class="{ active: view === 'notes' }" @click="view = 'notes'">阅读笔记</button>
+        <button class="tab" :class="{ active: view === 'notes' }" @click="view = 'notes'">
+          阅读笔记<span v-if="papers.noteGenerating" class="tab-badge">●</span>
+        </button>
       </div>
       <button class="btn small" @click="$emit('toggleChat')">💬 AI 助手</button>
     </div>
@@ -24,7 +26,7 @@
       <div v-show="view === 'pdf'" class="pdf-wrap">
         <iframe ref="pdfFrame" title="PDF 预览" />
       </div>
-      <NotesView v-if="view === 'notes'" />
+      <NotesView v-show="view === 'notes'" />
     </div>
   </section>
 
@@ -45,8 +47,9 @@ import { renderMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import NotesView from './NotesView.vue';
 
-const emit = defineEmits(['toggleChat', 'askImage', 'askText']);
 const papers = usePapersStore();
+
+const emit = defineEmits(['toggleChat', 'askImage', 'askText']);
 const view = ref('md');
 const mdBox = ref(null);
 const pdfFrame = ref(null);
@@ -114,6 +117,8 @@ watch(() => papers.currentId, async (id) => {
 .view-tabs { display: flex; gap: 4px; background: #eef0f2; padding: 3px; border-radius: 8px; }
 .tab { border: none; background: transparent; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--muted); }
 .tab.active { background: #fff; color: var(--text); box-shadow: var(--shadow); }
+.tab-badge { color: var(--orange); font-size: 10px; margin-left: 3px; animation: blink .8s step-end infinite; }
+@keyframes blink { 50% { opacity: 0; } }
 .status-bar {
   display: flex; align-items: center; gap: 14px;
   padding: 10px 24px; background: #fffbe6; border-bottom: 1px solid #ffe8b3; font-size: 13px; flex-shrink: 0;

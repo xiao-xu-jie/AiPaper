@@ -11,6 +11,13 @@ export function setContext(md) {
   paperMd = md || '';
 }
 
+function getProxyUrl(targetUrl) {
+  if (typeof window === 'undefined') return targetUrl;
+  if (window.location.protocol === 'file:') return targetUrl;
+  if (navigator.userAgent.includes('Electron')) return targetUrl;
+  return `${window.location.origin}/proxy?url=${encodeURIComponent(targetUrl)}`;
+}
+
 // history: {role, content}[]，不含 system；返回 assistant 回复字符串
 export async function chat(history, userMsg, images = [], onChunk) {
   if (!cfg.url || !cfg.model) throw new Error('请先填写并保存 AI 接口地址和模型名称');
@@ -32,7 +39,8 @@ export async function chat(history, userMsg, images = [], onChunk) {
     { role: 'user', content: userContent },
   ];
 
-  const res = await fetch(`${cfg.url}/chat/completions`, {
+  const targetUrl = `${cfg.url}/chat/completions`;
+  const res = await fetch(getProxyUrl(targetUrl), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

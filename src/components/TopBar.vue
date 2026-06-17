@@ -82,7 +82,7 @@
         <p class="changelog">{{ changelog }}</p>
         <div class="update-actions">
           <button class="btn secondary" @click="updateAvailable = false">稍后提醒</button>
-          <a :href="downloadUrl" target="_blank" class="btn primary" @click="updateAvailable = false">立即下载</a>
+          <button class="btn primary" @click="openDownloadUrl">立即下载</button>
         </div>
       </div>
     </div>
@@ -168,6 +168,17 @@ function compareVersion(v1, v2) {
     if (p1 > p2) return 1;
   }
   return 0;
+}
+
+function openDownloadUrl() {
+  updateAvailable.value = false;
+  // Electron 环境使用 shell 打开外部浏览器
+  if (window.electron && window.electron.openExternal) {
+    window.electron.openExternal(downloadUrl.value);
+  } else {
+    // 网页环境使用 window.open
+    window.open(downloadUrl.value, '_blank');
+  }
 }
 </script>
 

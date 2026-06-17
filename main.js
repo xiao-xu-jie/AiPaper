@@ -26,6 +26,7 @@ function createWindow() {
   const devUrl = process.env.ELECTRON_START_URL;
   if (devUrl) {
     win.loadURL(devUrl);
+    win.webContents.openDevTools(); // 开发时打开开发者工具
   } else {
     win.loadFile(path.join(__dirname, 'dist/index.html'));
   }

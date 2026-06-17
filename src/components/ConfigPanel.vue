@@ -79,7 +79,12 @@ async function fetchModels() {
   fetchError.value = '';
   try {
     const targetUrl = `${url}/models`;
-    const fetchUrl = cfg.proxy ? cfg.proxy + encodeURIComponent(targetUrl) : targetUrl;
+    const proxyPrefix = cfg.proxy || (
+      window.location.protocol !== 'file:' && !navigator.userAgent.includes('Electron')
+        ? `${window.location.origin}/proxy?url=`
+        : ''
+    );
+    const fetchUrl = proxyPrefix ? proxyPrefix + encodeURIComponent(targetUrl) : targetUrl;
     const res = await fetch(fetchUrl, {
       headers: cfg.aiKey ? { Authorization: `Bearer ${cfg.aiKey}` } : {},
     });

@@ -1,0 +1,40 @@
+{
+  "version": "2.0.0",
+  "downloadUrl": "https://github.com/xiao-xu-jie/AiPaper/releases/download/v2.0.0/AI%20Paper%20Setup%202.0.0.exe",
+  "changelog": "✨ 大纲导航 | 📸 图片预览与复制 | 🖱️ 右键快捷菜单 | 🤖 AI 智能助手 | 📝 自动生成笔记 | 🎨 界面优化",
+  "releaseDate": "2026-06-17",
+  "changes": {
+    "新功能": [
+      "支持 Markdown 和阅读笔记的大纲导航，快速跳转章节",
+      "图片点击预览，支持快捷复制到剪贴板",
+      "右键菜单：图片复制/提问，文字复制 Markdown/纯文本/提问",
+      "版本检查和更新提示（仅桌面版）",
+      "详细的帮助文档和使用指南",
+      "MinerU Token 快捷创建入口",
+      "前置校验和友好错误提示"
+    ],
+    "界面优化": [
+      "顶部显示 Logo 标识",
+      "底部版权信息",
+      "优化配置面板布局",
+      "改进笔记模板为详细学术格式"
+    ],
+    "技术改进": [
+      "网页版自动使用同源代理",
+      "AI 对话请求自动代理",
+      "模型列表自动获取",
+      "修复网页端笔记和 PDF 宽度异常",
+      "修复大纲面板空内容占位问题"
+    ]
+  },
+  "requirements": {
+    "minOS": "Windows 10",
+    "minRAM": "4GB",
+    "diskSpace": "200MB"
+  },
+  "notes": [
+    "首次使用需配置 MinerU Token（https://mineru.net/apiManage/token）",
+    "AI 功能为可选，不配置也可查看已解析论文",
+    "所有数据保存在本地，完全可控"
+  ]
+}

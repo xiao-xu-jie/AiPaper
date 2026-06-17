@@ -134,11 +134,12 @@ const server = http.createServer((req, res) => {
       res.end();
       return;
     }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({
       version: '2.0.0',
-      downloadUrl: 'https://github.com/xiaoxualg/aipaper/releases/latest',
-      changelog: '新增功能：大纲导航、图片预览、右键菜单等'
+      downloadUrl: 'https://github.com/xiao-xu-jie/AiPaper/releases/download/v2.0.0/AI%20Paper%20Setup%202.0.0.exe',
+      changelog: '✨ 大纲导航 | 📸 图片预览与复制 | 🖱️ 右键快捷菜单 | 🤖 AI 智能助手 | 📝 自动生成笔记 | 🎨 界面优化',
+      releaseDate: '2026-06-17'
     }));
     return;
   }

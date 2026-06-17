@@ -37,6 +37,11 @@
       <button v-if="ctxMenu.text" @click="askAboutText">💬 向 AI 提问选中内容</button>
     </div>
     <div v-if="ctxMenu.show" class="ctx-backdrop" @click="ctxMenu.show = false" @contextmenu.prevent="ctxMenu.show = false" />
+
+    <!-- 图片预览模态框 -->
+    <div v-if="preview.show" class="preview-modal" @click="preview.show = false">
+      <img :src="preview.src" alt="预览" @click.stop />
+    </div>
   </Teleport>
 </template>
 
@@ -53,6 +58,7 @@ const view = ref('md');
 const mdBox = ref(null);
 const pdfFrame = ref(null);
 const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '' });
+const preview = reactive({ show: false, src: '' });
 
 const paper = computed(() => papers.currentPaper);
 const title = computed(() => paper.value?.title || '未选择论文');
@@ -64,12 +70,20 @@ onMounted(async () => {
   const md = await store.loadMarkdown(id).catch(() => null);
   if (md && mdBox.value && paper.value?.state === 'done') {
     await renderMarkdown(mdBox.value, md, id);
+    mdBox.value.addEventListener('click', onImageClick);
   }
   if (pdfFrame.value) {
     const url = await store.getPdfUrl(id).catch(() => null);
     pdfFrame.value.src = url || 'about:blank';
   }
 });
+
+function onImageClick(e) {
+  if (e.target.tagName === 'IMG') {
+    preview.src = e.target.src;
+    preview.show = true;
+  }
+}
 
 function onContextMenu(e) {
   const isImg = e.target.tagName === 'IMG';
@@ -128,6 +142,8 @@ async function askAboutImage() {
 .md-view { height: 100%; overflow-y: auto; padding: 32px 48px; background: #fff; line-height: 1.7; }
 .md-view .placeholder { color: var(--muted); text-align: center; margin-top: 80px; }
 .md-view .placeholder.error { color: var(--red); }
+.md-view :deep(img) { cursor: pointer; transition: opacity .2s; }
+.md-view :deep(img:hover) { opacity: 0.85; }
 .pdf-wrap { height: 100%; }
 .pdf-wrap iframe { width: 100%; height: 100%; border: none; }
 .img-ctx-menu {
@@ -141,4 +157,15 @@ async function askAboutImage() {
 }
 .img-ctx-menu button:hover { background: #f0f1f3; }
 .ctx-backdrop { position: fixed; inset: 0; z-index: 499; }
+.preview-modal {
+  position: fixed; inset: 0; z-index: 600;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex; align-items: center; justify-content: center;
+  cursor: zoom-out;
+}
+.preview-modal img {
+  max-width: 90vw; max-height: 90vh;
+  object-fit: contain;
+  cursor: default;
+}
 </style>

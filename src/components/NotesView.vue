@@ -67,7 +67,7 @@
 </template>
 
 <script setup>
-import { ref, watch, computed, nextTick, reactive } from 'vue';
+import { ref, watch, computed, nextTick, reactive, inject } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
 import { parseMarkdown, renderMarkdown, renderMath } from '../lib/render.js';
@@ -77,6 +77,7 @@ import * as agent from '../lib/agent.js';
 const papers = usePapersStore();
 const cfg = useConfigStore();
 const emit = defineEmits(['askImage', 'askText']);
+const toast = inject('toast');
 
 const noteText = ref('');
 const mode = ref('edit');
@@ -175,11 +176,11 @@ watch(() => papers.noteGenerating, async (val) => {
 
 async function generate() {
   if (!papers.currentId || !papers.currentMd) {
-    statusText.value = '请先选择一篇已解析完成的论文';
+    toast('请先选择一篇已解析完成的论文', 'error');
     return;
   }
   if (!cfg.aiUrl || !cfg.aiModel) {
-    statusText.value = '请先配置 AI 接口地址和模型';
+    toast('请先配置 AI 接口地址和模型', 'error');
     return;
   }
 
@@ -210,7 +211,10 @@ ${papers.currentMd}`;
     papers.noteResult = { paperId: generatingFor, text: result };
     await store.saveNote(generatingFor, result);
   } catch (e) {
-    if (papers.currentId === generatingFor) statusText.value = '生成失败：' + e.message;
+    if (papers.currentId === generatingFor) {
+      statusText.value = '生成失败：' + e.message;
+      toast('生成失败：' + e.message, 'error');
+    }
   } finally {
     papers.noteGenerating = false;
     papers.noteGeneratingFor = null;

@@ -119,6 +119,7 @@ async function grantRestore() {
 
 function triggerUpload() {
   if (!dirReady.value) { toast('请先选择数据文件夹', 'error'); return; }
+  if (!cfg.token) { toast('请先配置 MinerU Token', 'error'); return; }
   fileInput.value.click();
 }
 
@@ -145,12 +146,14 @@ const pendingAskImage = ref(null);
 async function toggleChat() {
   if (chatOpen.value) { chatOpen.value = false; return; }
   if (!papers.currentId) return;
+  if (!cfg.aiUrl || !cfg.aiModel) { toast('请先配置 AI 接口地址和模型', 'error'); return; }
   agentLib.setContext(papers.currentMd || '');
   const needPick = await chatStore.loadForPaper(papers.currentId);
   if (!needPick) chatOpen.value = true;
 }
 
 async function onAskText(text) {
+  if (!cfg.aiUrl || !cfg.aiModel) { toast('请先配置 AI 接口地址和模型', 'error'); return; }
   if (!chatOpen.value) {
     if (!papers.currentId) return;
     agentLib.setContext(papers.currentMd || '');
@@ -163,6 +166,7 @@ async function onAskText(text) {
 }
 
 async function onAskImage(dataUrl) {
+  if (!cfg.aiUrl || !cfg.aiModel) { toast('请先配置 AI 接口地址和模型', 'error'); return; }
   if (!chatOpen.value) {
     if (!papers.currentId) return;
     agentLib.setContext(papers.currentMd || '');

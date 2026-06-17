@@ -78,7 +78,9 @@ async function fetchModels() {
   fetching.value = true;
   fetchError.value = '';
   try {
-    const res = await fetch(`${url}/models`, {
+    const targetUrl = `${url}/models`;
+    const fetchUrl = cfg.proxy ? cfg.proxy + encodeURIComponent(targetUrl) : targetUrl;
+    const res = await fetch(fetchUrl, {
       headers: cfg.aiKey ? { Authorization: `Bearer ${cfg.aiKey}` } : {},
     });
     const json = await res.json();
@@ -87,7 +89,6 @@ async function fetchModels() {
       return;
     }
     models.value = (json.data || []).sort((a, b) => a.id.localeCompare(b.id));
-    // 已保存的模型若不在列表里也保留为当前值
   } catch (e) {
     fetchError.value = '请求失败：' + e.message;
   } finally {

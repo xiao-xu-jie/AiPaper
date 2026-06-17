@@ -33,7 +33,10 @@
   <!-- 自定义右键菜单 -->
   <Teleport to="body">
     <div v-if="ctxMenu.show" class="img-ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
+      <button v-if="ctxMenu.src" @click="copyImageFromMenu">📋 复制图片</button>
       <button v-if="ctxMenu.src" @click="askAboutImage">💬 向 AI 提问此图</button>
+      <button v-if="ctxMenu.text" @click="copyAsMarkdown">📋 复制为 Markdown</button>
+      <button v-if="ctxMenu.text" @click="copyAsPlainText">📋 复制为纯文本</button>
       <button v-if="ctxMenu.text" @click="askAboutText">💬 向 AI 提问选中内容</button>
     </div>
     <div v-if="ctxMenu.show" class="ctx-backdrop" @click="ctxMenu.show = false" @contextmenu.prevent="ctxMenu.show = false" />
@@ -124,13 +127,82 @@ async function copyImage() {
     const src = preview.src;
     const res = await fetch(src);
     const blob = await res.blob();
-    await navigator.clipboard.write([
-      new ClipboardItem({ [blob.type]: blob })
-    ]);
-    preview.show = false;
+    const canvas = document.createElement('canvas');
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = src;
+    });
+    canvas.width = img.width;
+    canvas.height = img.height;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    canvas.toBlob(async (pngBlob) => {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': pngBlob })
+      ]);
+      preview.show = false;
+    }, 'image/png');
   } catch (e) {
     alert('复制失败：' + e.message);
   }
+}
+
+async function copyImageFromMenu() {
+  ctxMenu.show = false;
+  try {
+    const src = ctxMenu.src;
+    const res = await fetch(src);
+    const blob = await res.blob();
+    const canvas = document.createElement('canvas');
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = src;
+    });
+    canvas.width = img.width;
+    canvas.height = img.height;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    canvas.toBlob(async (pngBlob) => {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': pngBlob })
+      ]);
+    }, 'image/png');
+  } catch (e) {
+    alert('复制失败：' + e.message);
+  }
+}
+
+function getSelectedMarkdown() {
+  const selection = window.getSelection();
+  if (!selection.rangeCount) return '';
+  const container = document.createElement('div');
+  for (let i = 0; i < selection.rangeCount; i++) {
+    container.appendChild(selection.getRangeAt(i).cloneContents());
+  }
+  const tempDiv = document.createElement('div');
+  tempDiv.appendChild(container);
+  let md = '';
+  tempDiv.querySelectorAll('*').forEach((el) => {
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'strong' || tag === 'b') md += `**${el.textContent}**`;
+    else if (tag === 'em' || tag === 'i') md += `*${el.textContent}*`;
+    else if (tag === 'code') md += `\`${el.textContent}\``;
+    else md += el.textContent;
+  });
+  return md || tempDiv.textContent;
+}
+
+async function copyAsMarkdown() {
+  ctxMenu.show = false;
+  const md = getSelectedMarkdown();
+  await navigator.clipboard.writeText(md);
+}
+
+async function copyAsPlainText() {
+  ctxMenu.show = false;
+  await navigator.clipboard.writeText(ctxMenu.text);
 }
 </script>
 

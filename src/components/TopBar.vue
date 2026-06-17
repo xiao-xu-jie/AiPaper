@@ -118,20 +118,34 @@ async function checkUpdate(silent = false) {
     const apiUrl = isElectron.value
       ? 'https://aipaper.chat/api/version'
       : '/api/version';
+
+    console.log('检查更新, API:', apiUrl, 'isElectron:', isElectron.value);
+
     const res = await fetch(apiUrl);
     const data = await res.json();
     latestVersion.value = data.version;
     downloadUrl.value = data.downloadUrl;
     changelog.value = data.changelog;
 
+    console.log('当前版本:', currentVersion.value, '最新版本:', latestVersion.value);
+
     if (compareVersion(currentVersion.value, latestVersion.value) < 0) {
       updateAvailable.value = true;
     } else if (!silent) {
-      toast('已是最新版本', 'success');
+      if (toast) {
+        toast('已是最新版本', 'success');
+      } else {
+        alert('已是最新版本');
+      }
     }
   } catch (e) {
+    console.error('检查更新失败:', e);
     if (!silent) {
-      toast('检查更新失败：' + e.message, 'error');
+      if (toast) {
+        toast('检查更新失败：' + e.message, 'error');
+      } else {
+        alert('检查更新失败：' + e.message);
+      }
     }
   }
 }

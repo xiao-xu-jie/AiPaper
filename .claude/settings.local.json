@@ -23,7 +23,9 @@
       "Bash(npx vite *)",
       "Bash(python3 *)",
       "Bash(powershell *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:8788/api/version)",
+      "Bash(curl *)"
     ]
   }
 }

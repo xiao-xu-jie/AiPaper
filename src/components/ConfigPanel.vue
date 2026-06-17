@@ -2,7 +2,10 @@
   <section class="config">
     <div class="config-row">
       <label>MinerU Token
-        <input v-model="cfg.token" type="password" placeholder="在 mineru.net API 管理页创建" />
+        <div class="input-with-link">
+          <input v-model="cfg.token" type="password" placeholder="在 mineru.net API 管理页创建" />
+          <a href="https://mineru.net/apiManage/token" target="_blank" class="link-btn" title="前往创建 Token">🔗</a>
+        </div>
       </label>
       <label>模型
         <select v-model="cfg.model">
@@ -122,6 +125,13 @@ input, select {
   background: #fff;
 }
 input[type="password"] { min-width: 220px; }
+.input-with-link { display: flex; gap: 4px; align-items: center; }
+.link-btn {
+  border: 1px solid var(--border); background: var(--panel); border-radius: 7px;
+  padding: 5px 9px; font-size: 16px; text-decoration: none;
+  cursor: pointer; transition: .15s; display: flex; align-items: center;
+}
+.link-btn:hover { background: #f0f1f3; }
 .model-input-wrap { display: flex; gap: 4px; align-items: center; }
 .model-select { min-width: 180px; }
 .btn-icon {

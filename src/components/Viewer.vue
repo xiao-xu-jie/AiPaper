@@ -311,7 +311,7 @@ function onNotesAskText(text) {
 .md-view .placeholder.error { color: var(--red); }
 .md-view :deep(img) { cursor: pointer; transition: opacity .2s; }
 .md-view :deep(img:hover) { opacity: 0.85; }
-.pdf-wrap { height: 100%; }
+.pdf-wrap { height: 100%; flex: 1; }
 .pdf-wrap iframe { width: 100%; height: 100%; border: none; }
 .img-ctx-menu {
   position: fixed; z-index: 500;

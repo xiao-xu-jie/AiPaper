@@ -38,6 +38,8 @@
 
   <div class="toast" :class="toastState.cls" :style="{ opacity: toastState.show ? 1 : 0 }">{{ toastState.msg }}</div>
 
+  <footer class="footer">© 2026 小徐. All rights reserved.</footer>
+
   <input ref="fileInput" type="file" accept="application/pdf" multiple hidden @change="onFileInput" />
 </template>
 
@@ -215,4 +217,5 @@ watch(() => papers.currentMd, (md) => { agentLib.setContext(md || ''); });
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(0); background: #2b2f36; color: #fff; padding: 12px 22px; border-radius: 8px; font-size: 14px; pointer-events: none; transition: opacity .25s; z-index: 200; }
 .toast.success { background: var(--green); }
 .toast.error { background: var(--red); }
+.footer { text-align: center; padding: 10px 20px; font-size: 12px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--border); flex-shrink: 0; }
 </style>

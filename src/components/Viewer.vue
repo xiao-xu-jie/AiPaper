@@ -26,7 +26,7 @@
       <div v-show="view === 'pdf'" class="pdf-wrap">
         <iframe ref="pdfFrame" title="PDF 预览" />
       </div>
-      <NotesView v-show="view === 'notes'" />
+      <NotesView v-show="view === 'notes'" @askImage="onNotesAskImage" @askText="onNotesAskText" />
     </div>
   </section>
 
@@ -203,6 +203,14 @@ async function copyAsMarkdown() {
 async function copyAsPlainText() {
   ctxMenu.show = false;
   await navigator.clipboard.writeText(ctxMenu.text);
+}
+
+function onNotesAskImage(dataUrl) {
+  emit('askImage', dataUrl);
+}
+
+function onNotesAskText(text) {
+  emit('askText', text);
 }
 </script>
 

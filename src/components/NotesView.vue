@@ -11,7 +11,7 @@
     </div>
 
     <div v-if="generating" class="notes-generating">
-      <div ref="streamEl" class="gen-bubble markdown-body" />
+      <div ref="streamEl" class="gen-bubble markdown-body" @contextmenu="onContextMenu" @click="onImageClick" />
     </div>
 
     <textarea
@@ -24,12 +24,32 @@
       v-show="!generating && mode === 'preview'"
       ref="previewEl"
       class="notes-preview markdown-body"
+      @contextmenu="onContextMenu"
+      @click="onImageClick"
     />
+
+    <!-- 右键菜单 -->
+    <Teleport to="body">
+      <div v-if="ctxMenu.show" class="img-ctx-menu" :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }" @click.stop>
+        <button v-if="ctxMenu.src" @click="copyImageFromMenu">📋 复制图片</button>
+        <button v-if="ctxMenu.src" @click="askAboutImage">💬 向 AI 提问此图</button>
+        <button v-if="ctxMenu.text" @click="copyAsMarkdown">📋 复制为 Markdown</button>
+        <button v-if="ctxMenu.text" @click="copyAsPlainText">📋 复制为纯文本</button>
+        <button v-if="ctxMenu.text" @click="askAboutText">💬 向 AI 提问选中内容</button>
+      </div>
+      <div v-if="ctxMenu.show" class="ctx-backdrop" @click="ctxMenu.show = false" @contextmenu.prevent="ctxMenu.show = false" />
+
+      <!-- 图片预览 -->
+      <div v-if="preview.show" class="preview-modal" @click="preview.show = false">
+        <img :src="preview.src" alt="预览" @click.stop />
+        <button class="copy-btn" @click.stop="copyImage">📋 复制图片</button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, computed, nextTick } from 'vue';
+import { ref, watch, computed, nextTick, reactive } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
 import { parseMarkdown, renderMarkdown, renderMath } from '../lib/render.js';
@@ -38,12 +58,15 @@ import * as agent from '../lib/agent.js';
 
 const papers = usePapersStore();
 const cfg = useConfigStore();
+const emit = defineEmits(['askImage', 'askText']);
 
 const noteText = ref('');
 const mode = ref('edit');
 const statusText = ref('');
 const previewEl = ref(null);
 const streamEl = ref(null);
+const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '' });
+const preview = reactive({ show: false, src: '' });
 
 // generating / streamText 用 store，保证跨 tab 切换不丢失
 const generating = computed(() => papers.noteGenerating && papers.noteGeneratingFor === papers.currentId);
@@ -160,6 +183,125 @@ async function save() {
   await store.saveNote(papers.currentId, noteText.value);
   statusText.value = '已保存';
 }
+
+function onImageClick(e) {
+  if (e.target.tagName === 'IMG') {
+    preview.src = e.target.src;
+    preview.show = true;
+  }
+}
+
+function onContextMenu(e) {
+  const isImg = e.target.tagName === 'IMG';
+  const selectedText = window.getSelection()?.toString().trim() || '';
+  if (!isImg && !selectedText) return;
+  e.preventDefault();
+  ctxMenu.src = isImg ? e.target.src : '';
+  ctxMenu.text = selectedText;
+  ctxMenu.x = e.clientX;
+  ctxMenu.y = e.clientY;
+  ctxMenu.show = true;
+}
+
+function askAboutText() {
+  ctxMenu.show = false;
+  emit('askText', ctxMenu.text);
+}
+
+async function askAboutImage() {
+  ctxMenu.show = false;
+  const src = ctxMenu.src;
+  let dataUrl = src;
+  if (!src.startsWith('data:')) {
+    const res = await fetch(src);
+    const blob = await res.blob();
+    dataUrl = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve(ev.target.result);
+      reader.readAsDataURL(blob);
+    });
+  }
+  emit('askImage', dataUrl);
+}
+
+async function copyImage() {
+  try {
+    const src = preview.src;
+    const canvas = document.createElement('canvas');
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = src;
+    });
+    canvas.width = img.width;
+    canvas.height = img.height;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    canvas.toBlob(async (pngBlob) => {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': pngBlob })
+      ]);
+      preview.show = false;
+    }, 'image/png');
+  } catch (e) {
+    alert('复制失败：' + e.message);
+  }
+}
+
+async function copyImageFromMenu() {
+  ctxMenu.show = false;
+  try {
+    const src = ctxMenu.src;
+    const canvas = document.createElement('canvas');
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = src;
+    });
+    canvas.width = img.width;
+    canvas.height = img.height;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    canvas.toBlob(async (pngBlob) => {
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': pngBlob })
+      ]);
+    }, 'image/png');
+  } catch (e) {
+    alert('复制失败：' + e.message);
+  }
+}
+
+function getSelectedMarkdown() {
+  const selection = window.getSelection();
+  if (!selection.rangeCount) return '';
+  const container = document.createElement('div');
+  for (let i = 0; i < selection.rangeCount; i++) {
+    container.appendChild(selection.getRangeAt(i).cloneContents());
+  }
+  const tempDiv = document.createElement('div');
+  tempDiv.appendChild(container);
+  let md = '';
+  tempDiv.querySelectorAll('*').forEach((el) => {
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'strong' || tag === 'b') md += `**${el.textContent}**`;
+    else if (tag === 'em' || tag === 'i') md += `*${el.textContent}*`;
+    else if (tag === 'code') md += `\`${el.textContent}\``;
+    else md += el.textContent;
+  });
+  return md || tempDiv.textContent;
+}
+
+async function copyAsMarkdown() {
+  ctxMenu.show = false;
+  const md = getSelectedMarkdown();
+  await navigator.clipboard.writeText(md);
+}
+
+async function copyAsPlainText() {
+  ctxMenu.show = false;
+  await navigator.clipboard.writeText(ctxMenu.text);
+}
 </script>
 
 <style scoped>
@@ -176,8 +318,42 @@ async function save() {
   font-size: 14px; line-height: 1.8; overflow-y: auto;
 }
 .notes-preview { flex: 1; overflow-y: auto; padding: 24px 40px; line-height: 1.7; }
+.notes-preview :deep(img) { cursor: pointer; transition: opacity .2s; }
+.notes-preview :deep(img:hover) { opacity: 0.85; }
 .notes-generating { flex: 1; overflow-y: auto; padding: 24px 40px; }
 .gen-bubble { line-height: 1.7; }
+.gen-bubble :deep(img) { cursor: pointer; transition: opacity .2s; }
+.gen-bubble :deep(img:hover) { opacity: 0.85; }
 .cursor { animation: blink .7s step-end infinite; }
 @keyframes blink { 50% { opacity: 0; } }
+.img-ctx-menu {
+  position: fixed; z-index: 500;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12); overflow: hidden;
+}
+.img-ctx-menu button {
+  display: block; width: 100%; padding: 10px 16px; border: none; background: transparent;
+  text-align: left; cursor: pointer; font-size: 14px; color: var(--text);
+}
+.img-ctx-menu button:hover { background: #f0f1f3; }
+.ctx-backdrop { position: fixed; inset: 0; z-index: 499; }
+.preview-modal {
+  position: fixed; inset: 0; z-index: 600;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex; align-items: center; justify-content: center;
+  cursor: zoom-out;
+}
+.preview-modal img {
+  max-width: 90vw; max-height: 90vh;
+  object-fit: contain;
+  cursor: default;
+}
+.copy-btn {
+  position: absolute; top: 20px; right: 20px;
+  padding: 10px 16px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--border);
+  cursor: pointer; font-size: 14px; box-shadow: var(--shadow);
+  transition: background .2s;
+}
+.copy-btn:hover { background: #f0f1f3; }
 </style>

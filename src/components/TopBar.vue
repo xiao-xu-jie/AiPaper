@@ -114,7 +114,11 @@ onMounted(() => {
 
 async function checkUpdate(silent = false) {
   try {
-    const res = await fetch('/api/version');
+    // Electron 环境使用公网地址，网页版使用相对路径
+    const apiUrl = isElectron.value
+      ? 'https://aipaper.chat/api/version'
+      : '/api/version';
+    const res = await fetch(apiUrl);
     const data = await res.json();
     latestVersion.value = data.version;
     downloadUrl.value = data.downloadUrl;

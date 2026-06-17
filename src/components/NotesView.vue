@@ -10,23 +10,41 @@
       <button class="btn small" @click="save">保存</button>
     </div>
 
-    <div v-if="generating" class="notes-generating">
-      <div ref="streamEl" class="gen-bubble markdown-body" @contextmenu="onContextMenu" @click="onImageClick" />
-    </div>
+    <div class="notes-body">
+      <aside v-if="mode === 'preview' && showOutline && !generating" class="outline-panel">
+        <div class="outline-header">
+          <span>目录</span>
+          <button class="outline-toggle" @click="showOutline = false">✕</button>
+        </div>
+        <nav class="outline-nav">
+          <a
+            v-for="item in outline"
+            :key="item.id"
+            :class="['outline-item', `level-${item.level}`]"
+            @click="scrollToHeading(item.id)"
+          >{{ item.text }}</a>
+        </nav>
+      </aside>
+      <button v-if="mode === 'preview' && !showOutline && !generating" class="outline-show-btn" @click="showOutline = true">☰ 目录</button>
 
-    <textarea
-      v-if="!generating && mode === 'edit'"
-      v-model="noteText"
-      class="notes-editor"
-      placeholder="尚无笔记，点击「AI 生成笔记」自动生成，或直接在此编辑..."
-    />
-    <article
-      v-show="!generating && mode === 'preview'"
-      ref="previewEl"
-      class="notes-preview markdown-body"
-      @contextmenu="onContextMenu"
-      @click="onImageClick"
-    />
+      <div v-if="generating" class="notes-generating">
+        <div ref="streamEl" class="gen-bubble markdown-body" @contextmenu="onContextMenu" @click="onImageClick" />
+      </div>
+
+      <textarea
+        v-if="!generating && mode === 'edit'"
+        v-model="noteText"
+        class="notes-editor"
+        placeholder="尚无笔记，点击「AI 生成笔记」自动生成，或直接在此编辑..."
+      />
+      <article
+        v-show="!generating && mode === 'preview'"
+        ref="previewEl"
+        class="notes-preview markdown-body"
+        @contextmenu="onContextMenu"
+        @click="onImageClick"
+      />
+    </div>
 
     <!-- 右键菜单 -->
     <Teleport to="body">
@@ -67,10 +85,31 @@ const previewEl = ref(null);
 const streamEl = ref(null);
 const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '' });
 const preview = reactive({ show: false, src: '' });
+const showOutline = ref(true);
+const outline = ref([]);
 
 // generating / streamText 用 store，保证跨 tab 切换不丢失
 const generating = computed(() => papers.noteGenerating && papers.noteGeneratingFor === papers.currentId);
 const streamText = computed(() => papers.noteStream);
+
+function extractOutline() {
+  if (!previewEl.value) return [];
+  const headings = previewEl.value.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  return [...headings].map((el, idx) => {
+    const id = `note-heading-${idx}`;
+    el.id = id;
+    return {
+      id,
+      level: parseInt(el.tagName[1]),
+      text: el.textContent.trim()
+    };
+  });
+}
+
+function scrollToHeading(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 // 切换论文时加载对应笔记（后台生成不受影响）
 watch(() => papers.currentId, async (id) => {
@@ -119,6 +158,7 @@ watch([mode, noteText], async ([m]) => {
   await nextTick();
   if (previewEl.value) {
     await renderMarkdown(previewEl.value, noteText.value, papers.currentId);
+    outline.value = extractOutline();
   }
 });
 watch(() => papers.noteGenerating, async (val) => {
@@ -312,6 +352,42 @@ async function copyAsPlainText() {
 }
 .notes-status { flex: 1; font-size: 12px; color: var(--muted); }
 .btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.notes-body { flex: 1; overflow: hidden; position: relative; display: flex; }
+.outline-panel {
+  width: 240px; flex-shrink: 0;
+  background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+.outline-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  font-size: 13px; font-weight: 600;
+}
+.outline-toggle {
+  border: none; background: transparent; cursor: pointer;
+  padding: 2px 6px; border-radius: 4px; font-size: 16px;
+}
+.outline-toggle:hover { background: #eef0f2; }
+.outline-nav { flex: 1; overflow-y: auto; padding: 8px 0; }
+.outline-item {
+  display: block; padding: 6px 16px; font-size: 13px;
+  cursor: pointer; color: var(--text); text-decoration: none;
+  transition: background .15s;
+}
+.outline-item:hover { background: #f0f1f3; }
+.outline-item.level-1 { font-weight: 600; }
+.outline-item.level-2 { padding-left: 28px; }
+.outline-item.level-3 { padding-left: 40px; font-size: 12px; }
+.outline-item.level-4 { padding-left: 52px; font-size: 12px; }
+.outline-item.level-5 { padding-left: 64px; font-size: 11px; }
+.outline-item.level-6 { padding-left: 76px; font-size: 11px; }
+.outline-show-btn {
+  position: absolute; top: 12px; left: 12px; z-index: 10;
+  padding: 6px 12px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--border);
+  cursor: pointer; font-size: 13px; box-shadow: var(--shadow);
+}
+.outline-show-btn:hover { background: #f0f1f3; }
 .notes-editor {
   flex: 1; resize: none; border: none; outline: none;
   padding: 24px 40px; font-family: "SF Mono", Consolas, monospace;

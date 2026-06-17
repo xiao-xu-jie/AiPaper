@@ -89,6 +89,13 @@ function handleStatic(req, res, pathname) {
   if (!filePath.startsWith(base)) { res.writeHead(403); res.end('Forbidden'); return; }
   fs.readFile(filePath, (err, data) => {
     if (err) {
+      // 如果是请求具体文件（有扩展名），返回 404
+      // 只有无扩展名的路径才回退到 index.html（用于 SPA 路由）
+      if (path.extname(filePath)) {
+        res.writeHead(404);
+        res.end('Not Found');
+        return;
+      }
       const indexFile = path.join(base, 'index.html');
       fs.readFile(indexFile, (err2, d) => {
         if (err2) { res.writeHead(404); res.end('Not Found'); return; }

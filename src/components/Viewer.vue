@@ -41,6 +41,7 @@
     <!-- 图片预览模态框 -->
     <div v-if="preview.show" class="preview-modal" @click="preview.show = false">
       <img :src="preview.src" alt="预览" @click.stop />
+      <button class="copy-btn" @click.stop="copyImage">📋 复制图片</button>
     </div>
   </Teleport>
 </template>
@@ -117,6 +118,20 @@ async function askAboutImage() {
   }
   emit('askImage', dataUrl);
 }
+
+async function copyImage() {
+  try {
+    const src = preview.src;
+    const res = await fetch(src);
+    const blob = await res.blob();
+    await navigator.clipboard.write([
+      new ClipboardItem({ [blob.type]: blob })
+    ]);
+    preview.show = false;
+  } catch (e) {
+    alert('复制失败：' + e.message);
+  }
+}
 </script>
 
 <style scoped>
@@ -168,4 +183,12 @@ async function askAboutImage() {
   object-fit: contain;
   cursor: default;
 }
+.copy-btn {
+  position: absolute; top: 20px; right: 20px;
+  padding: 10px 16px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--border);
+  cursor: pointer; font-size: 14px; box-shadow: var(--shadow);
+  transition: background .2s;
+}
+.copy-btn:hover { background: #f0f1f3; }
 </style>

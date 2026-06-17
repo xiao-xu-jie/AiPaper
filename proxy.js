@@ -119,6 +119,23 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // 版本检查接口
+  if (url.pathname === '/api/version') {
+    setCors(res);
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      version: '2.0.0',
+      downloadUrl: 'https://github.com/xiaoxualg/aipaper/releases/latest',
+      changelog: '新增功能：大纲导航、图片预览、右键菜单等'
+    }));
+    return;
+  }
+
   handleStatic(req, res, url.pathname);
 });
 

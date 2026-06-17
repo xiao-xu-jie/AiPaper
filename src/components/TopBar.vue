@@ -6,6 +6,7 @@
       <span class="subtitle">MinerU 在线解析</span>
     </div>
     <button class="btn secondary" @click="showHelp = true">❓ 帮助</button>
+    <button v-if="isElectron" class="btn secondary" @click="checkUpdate">🔄 检查更新</button>
     <button class="btn primary" @click="$emit('upload')">＋ 上传 PDF</button>
   </header>
 
@@ -72,13 +73,76 @@
         </div>
       </div>
     </div>
+    <!-- 更新提示弹窗 -->
+    <div v-if="updateAvailable" class="update-overlay" @click="updateAvailable = false">
+      <div class="update-modal" @click.stop>
+        <h3>🎉 发现新版本</h3>
+        <p><strong>当前版本：</strong>{{ currentVersion }}</p>
+        <p><strong>最新版本：</strong>{{ latestVersion }}</p>
+        <p class="changelog">{{ changelog }}</p>
+        <div class="update-actions">
+          <button class="btn secondary" @click="updateAvailable = false">稍后提醒</button>
+          <a :href="downloadUrl" target="_blank" class="btn primary" @click="updateAvailable = false">立即下载</a>
+        </div>
+      </div>
+    </div>
   </Teleport>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, inject } from 'vue';
 defineEmits(['upload']);
+
 const showHelp = ref(false);
+const isElectron = ref(false);
+const updateAvailable = ref(false);
+const currentVersion = ref('2.0.0');
+const latestVersion = ref('');
+const downloadUrl = ref('');
+const changelog = ref('');
+const toast = inject('toast');
+
+onMounted(() => {
+  // 检测是否为 Electron 环境
+  isElectron.value = window.location.protocol === 'file:' || navigator.userAgent.includes('Electron');
+
+  // Electron 环境自动检查更新
+  if (isElectron.value) {
+    checkUpdate(true);
+  }
+});
+
+async function checkUpdate(silent = false) {
+  try {
+    const res = await fetch('/api/version');
+    const data = await res.json();
+    latestVersion.value = data.version;
+    downloadUrl.value = data.downloadUrl;
+    changelog.value = data.changelog;
+
+    if (compareVersion(currentVersion.value, latestVersion.value) < 0) {
+      updateAvailable.value = true;
+    } else if (!silent) {
+      toast('已是最新版本', 'success');
+    }
+  } catch (e) {
+    if (!silent) {
+      toast('检查更新失败：' + e.message, 'error');
+    }
+  }
+}
+
+function compareVersion(v1, v2) {
+  const parts1 = v1.split('.').map(Number);
+  const parts2 = v2.split('.').map(Number);
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const p1 = parts1[i] || 0;
+    const p2 = parts2[i] || 0;
+    if (p1 < p2) return -1;
+    if (p1 > p2) return 1;
+  }
+  return 0;
+}
 </script>
 
 <style scoped>
@@ -143,4 +207,31 @@ const showHelp = ref(false);
   font-family: "SF Mono", Consolas, monospace; font-size: 13px;
 }
 .help-content strong { color: var(--text); }
+.update-overlay {
+  position: fixed; inset: 0; z-index: 1001;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.update-modal {
+  background: #fff; border-radius: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  padding: 32px; max-width: 450px; width: 100%;
+  text-align: center;
+}
+.update-modal h3 {
+  margin: 0 0 20px 0; font-size: 20px;
+}
+.update-modal p {
+  margin: 8px 0; font-size: 14px; color: var(--text);
+}
+.update-modal .changelog {
+  color: var(--muted); margin: 16px 0;
+  padding: 12px; background: #f8f9fa; border-radius: 6px;
+}
+.update-actions {
+  display: flex; gap: 12px; justify-content: center; margin-top: 24px;
+}
+.update-actions .btn {
+  padding: 10px 20px; text-decoration: none; display: inline-block;
+}
 </style>

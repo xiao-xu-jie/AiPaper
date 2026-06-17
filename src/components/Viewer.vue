@@ -18,7 +18,7 @@
     </div>
 
     <div class="viewer-body">
-      <aside v-if="view === 'md' && showOutline" class="outline-panel">
+      <aside v-if="view === 'md' && showOutline && outline.length" class="outline-panel">
         <div class="outline-header">
           <span>目录</span>
           <button class="outline-toggle" @click="showOutline = false">✕</button>
@@ -32,7 +32,7 @@
           >{{ item.text }}</a>
         </nav>
       </aside>
-      <button v-if="view === 'md' && !showOutline" class="outline-show-btn" @click="showOutline = true">☰ 目录</button>
+      <button v-if="view === 'md' && !showOutline && outline.length" class="outline-show-btn" @click="showOutline = true">☰ 目录</button>
       <article v-show="view === 'md'" ref="mdBox" class="md-view markdown-body" @contextmenu="onContextMenu">
         <div v-if="!paper" class="placeholder">选择或上传一篇论文以查看解析结果</div>
         <div v-else-if="paper.state === 'failed'" class="placeholder error">解析失败：{{ paper.error }}</div>

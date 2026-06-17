@@ -11,7 +11,7 @@
     </div>
 
     <div class="notes-body">
-      <aside v-if="mode === 'preview' && showOutline && !generating" class="outline-panel">
+      <aside v-if="mode === 'preview' && showOutline && !generating && outline.length" class="outline-panel">
         <div class="outline-header">
           <span>目录</span>
           <button class="outline-toggle" @click="showOutline = false">✕</button>
@@ -25,7 +25,7 @@
           >{{ item.text }}</a>
         </nav>
       </aside>
-      <button v-if="mode === 'preview' && !showOutline && !generating" class="outline-show-btn" @click="showOutline = true">☰ 目录</button>
+      <button v-if="mode === 'preview' && !showOutline && !generating && outline.length" class="outline-show-btn" @click="showOutline = true">☰ 目录</button>
 
       <div v-if="generating" class="notes-generating">
         <div ref="streamEl" class="gen-bubble markdown-body" @contextmenu="onContextMenu" @click="onImageClick" />

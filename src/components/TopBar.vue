@@ -80,9 +80,13 @@
         <p><strong>当前版本：</strong>{{ currentVersion }}</p>
         <p><strong>最新版本：</strong>{{ latestVersion }}</p>
         <p class="changelog">{{ changelog }}</p>
+        <div class="download-link">
+          <label>下载地址：</label>
+          <input :value="downloadUrl" readonly @click="e => e.target.select()" />
+        </div>
+        <p class="hint">复制上方链接到浏览器打开下载</p>
         <div class="update-actions">
-          <button class="btn secondary" @click="updateAvailable = false">稍后提醒</button>
-          <button class="btn primary" @click="openDownloadUrl">立即下载</button>
+          <button class="btn primary" @click="updateAvailable = false">我知道了</button>
         </div>
       </div>
     </div>
@@ -169,17 +173,6 @@ function compareVersion(v1, v2) {
   }
   return 0;
 }
-
-function openDownloadUrl() {
-  updateAvailable.value = false;
-  // Electron 环境使用 shell 打开外部浏览器
-  if (window.electron && window.electron.openExternal) {
-    window.electron.openExternal(downloadUrl.value);
-  } else {
-    // 网页环境使用 window.open
-    window.open(downloadUrl.value, '_blank');
-  }
-}
 </script>
 
 <style scoped>
@@ -264,6 +257,26 @@ function openDownloadUrl() {
 .update-modal .changelog {
   color: var(--muted); margin: 16px 0;
   padding: 12px; background: #f8f9fa; border-radius: 6px;
+}
+.download-link {
+  margin: 20px 0 8px 0;
+  text-align: left;
+}
+.download-link label {
+  display: block; font-size: 13px; font-weight: 600;
+  margin-bottom: 6px; color: var(--text);
+}
+.download-link input {
+  width: 100%; padding: 8px 12px; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 6px;
+  font-family: "SF Mono", Consolas, monospace;
+  background: #f8f9fa; cursor: text;
+}
+.download-link input:focus {
+  outline: none; border-color: var(--primary);
+}
+.update-modal .hint {
+  font-size: 12px; color: var(--muted); margin: 4px 0 16px 0;
 }
 .update-actions {
   display: flex; gap: 12px; justify-content: center; margin-top: 24px;

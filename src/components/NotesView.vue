@@ -345,7 +345,7 @@ async function copyAsPlainText() {
 </script>
 
 <style scoped>
-.notes-wrap { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: #fff; }
+.notes-wrap { display: flex; flex-direction: column; height: 100%; overflow: hidden; background: #fff; flex: 1; }
 .notes-toolbar {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;

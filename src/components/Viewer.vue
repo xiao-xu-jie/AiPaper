@@ -18,6 +18,21 @@
     </div>
 
     <div class="viewer-body">
+      <aside v-if="view === 'md' && showOutline" class="outline-panel">
+        <div class="outline-header">
+          <span>目录</span>
+          <button class="outline-toggle" @click="showOutline = false">✕</button>
+        </div>
+        <nav class="outline-nav">
+          <a
+            v-for="item in outline"
+            :key="item.id"
+            :class="['outline-item', `level-${item.level}`]"
+            @click="scrollToHeading(item.id)"
+          >{{ item.text }}</a>
+        </nav>
+      </aside>
+      <button v-if="view === 'md' && !showOutline" class="outline-show-btn" @click="showOutline = true">☰ 目录</button>
       <article v-show="view === 'md'" ref="mdBox" class="md-view markdown-body" @contextmenu="onContextMenu">
         <div v-if="!paper" class="placeholder">选择或上传一篇论文以查看解析结果</div>
         <div v-else-if="paper.state === 'failed'" class="placeholder error">解析失败：{{ paper.error }}</div>
@@ -63,9 +78,30 @@ const mdBox = ref(null);
 const pdfFrame = ref(null);
 const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '' });
 const preview = reactive({ show: false, src: '' });
+const showOutline = ref(true);
+const outline = ref([]);
 
 const paper = computed(() => papers.currentPaper);
 const title = computed(() => paper.value?.title || '未选择论文');
+
+function extractOutline() {
+  if (!mdBox.value) return [];
+  const headings = mdBox.value.querySelectorAll('h1, h2, h3, h4, h5, h6');
+  return [...headings].map((el, idx) => {
+    const id = `heading-${idx}`;
+    el.id = id;
+    return {
+      id,
+      level: parseInt(el.tagName[1]),
+      text: el.textContent.trim()
+    };
+  });
+}
+
+function scrollToHeading(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 // 组件挂载时（key变化后重建）直接加载当前论文
 onMounted(async () => {
@@ -75,6 +111,7 @@ onMounted(async () => {
   if (md && mdBox.value && paper.value?.state === 'done') {
     await renderMarkdown(mdBox.value, md, id);
     mdBox.value.addEventListener('click', onImageClick);
+    outline.value = extractOutline();
   }
   if (pdfFrame.value) {
     const url = await store.getPdfUrl(id).catch(() => null);
@@ -233,8 +270,43 @@ function onNotesAskText(text) {
 .status-bar.failed { background: #fce8e8; border-color: #f5c2c2; color: var(--red); }
 .progress { flex: 1; height: 6px; background: #eceef0; border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; background: var(--primary); transition: width .3s; }
-.viewer-body { flex: 1; overflow: hidden; position: relative; }
-.md-view { height: 100%; overflow-y: auto; padding: 32px 48px; background: #fff; line-height: 1.7; }
+.viewer-body { flex: 1; overflow: hidden; position: relative; display: flex; }
+.outline-panel {
+  width: 240px; flex-shrink: 0;
+  background: var(--panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+.outline-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  font-size: 13px; font-weight: 600;
+}
+.outline-toggle {
+  border: none; background: transparent; cursor: pointer;
+  padding: 2px 6px; border-radius: 4px; font-size: 16px;
+}
+.outline-toggle:hover { background: #eef0f2; }
+.outline-nav { flex: 1; overflow-y: auto; padding: 8px 0; }
+.outline-item {
+  display: block; padding: 6px 16px; font-size: 13px;
+  cursor: pointer; color: var(--text); text-decoration: none;
+  transition: background .15s;
+}
+.outline-item:hover { background: #f0f1f3; }
+.outline-item.level-1 { font-weight: 600; }
+.outline-item.level-2 { padding-left: 28px; }
+.outline-item.level-3 { padding-left: 40px; font-size: 12px; }
+.outline-item.level-4 { padding-left: 52px; font-size: 12px; }
+.outline-item.level-5 { padding-left: 64px; font-size: 11px; }
+.outline-item.level-6 { padding-left: 76px; font-size: 11px; }
+.outline-show-btn {
+  position: absolute; top: 12px; left: 12px; z-index: 10;
+  padding: 6px 12px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--border);
+  cursor: pointer; font-size: 13px; box-shadow: var(--shadow);
+}
+.outline-show-btn:hover { background: #f0f1f3; }
+.md-view { height: 100%; overflow-y: auto; padding: 32px 48px; background: #fff; line-height: 1.7; flex: 1; }
 .md-view .placeholder { color: var(--muted); text-align: center; margin-top: 80px; }
 .md-view .placeholder.error { color: var(--red); }
 .md-view :deep(img) { cursor: pointer; transition: opacity .2s; }

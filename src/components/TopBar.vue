@@ -7,6 +7,7 @@
     </div>
     <button class="btn secondary" @click="showHelp = true">❓ 帮助</button>
     <button v-if="isElectron" class="btn secondary" @click="handleCheckUpdate">🔄 检查更新</button>
+    <button v-if="!isElectron" class="btn secondary" @click="goToDownload">📥 下载客户端</button>
     <button class="btn primary" @click="$emit('upload')">＋ 上传 PDF</button>
   </header>
 
@@ -172,6 +173,10 @@ function compareVersion(v1, v2) {
     if (p1 > p2) return 1;
   }
   return 0;
+}
+
+function goToDownload() {
+  window.open('/download.html', '_blank');
 }
 </script>
 

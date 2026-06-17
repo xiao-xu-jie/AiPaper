@@ -29,7 +29,12 @@
       "Bash(git remote *)",
       "Bash(git push *)",
       "Bash(git config *)",
-      "Bash(git filter-branch *)"
+      "Bash(git filter-branch *)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch *)",
+      "Bash(git stash *)",
+      "Bash(git tag *)",
+      "Bash(awk '{print $9, $5}')",
+      "Bash(gh --version)"
     ]
   }
 }

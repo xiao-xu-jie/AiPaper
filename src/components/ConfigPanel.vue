@@ -18,9 +18,6 @@
           <option value="korean">韩文</option>
         </select>
       </label>
-      <label>代理前缀（可选）
-        <input v-model="cfg.proxy" type="text" placeholder="http://localhost:8788/proxy?url=" />
-      </label>
     </div>
     <div class="config-row">
       <label>AI 接口地址
@@ -64,7 +61,7 @@ const dirty = ref(false);
 
 // 监听所有配置字段变化
 watch(
-  () => [cfg.token, cfg.model, cfg.lang, cfg.proxy, cfg.aiUrl, cfg.aiModel, cfg.aiKey, cfg.noteTemplate],
+  () => [cfg.token, cfg.model, cfg.lang, cfg.aiUrl, cfg.aiModel, cfg.aiKey, cfg.noteTemplate],
   () => { dirty.value = true; }
 );
 
@@ -79,11 +76,9 @@ async function fetchModels() {
   fetchError.value = '';
   try {
     const targetUrl = `${url}/models`;
-    const proxyPrefix = cfg.proxy || (
-      window.location.protocol !== 'file:' && !navigator.userAgent.includes('Electron')
-        ? `${window.location.origin}/proxy?url=`
-        : ''
-    );
+    const proxyPrefix = window.location.protocol !== 'file:' && !navigator.userAgent.includes('Electron')
+      ? `${window.location.origin}/proxy?url=`
+      : '';
     const fetchUrl = proxyPrefix ? proxyPrefix + encodeURIComponent(targetUrl) : targetUrl;
     const res = await fetch(fetchUrl, {
       headers: cfg.aiKey ? { Authorization: `Bearer ${cfg.aiKey}` } : {},

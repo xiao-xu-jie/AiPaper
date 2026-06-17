@@ -38,7 +38,6 @@ export const useConfigStore = defineStore('config', {
     token: localStorage.getItem('mineru_token') || '',
     model: localStorage.getItem('mineru_model') || 'vlm',
     lang: localStorage.getItem('mineru_lang') || 'ch',
-    proxy: localStorage.getItem('mineru_proxy') || '',
     aiUrl: localStorage.getItem('ai_url') || '',
     aiModel: localStorage.getItem('ai_model') || '',
     aiKey: localStorage.getItem('ai_key') || '',
@@ -46,7 +45,7 @@ export const useConfigStore = defineStore('config', {
   }),
   actions: {
     init() {
-      const effectiveProxy = this.proxy || autoProxyPrefix();
+      const effectiveProxy = autoProxyPrefix();
       mineru.setProxy(effectiveProxy);
       agent.configure(this.aiUrl, this.aiModel, this.aiKey);
     },
@@ -54,12 +53,11 @@ export const useConfigStore = defineStore('config', {
       localStorage.setItem('mineru_token', this.token);
       localStorage.setItem('mineru_model', this.model);
       localStorage.setItem('mineru_lang', this.lang);
-      localStorage.setItem('mineru_proxy', this.proxy);
       localStorage.setItem('ai_url', this.aiUrl);
       localStorage.setItem('ai_model', this.aiModel);
       localStorage.setItem('ai_key', this.aiKey);
       localStorage.setItem('note_template', this.noteTemplate);
-      const effectiveProxy = this.proxy || autoProxyPrefix();
+      const effectiveProxy = autoProxyPrefix();
       mineru.setProxy(effectiveProxy);
       agent.configure(this.aiUrl, this.aiModel, this.aiKey);
     },

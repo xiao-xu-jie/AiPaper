@@ -6,7 +6,7 @@
       <span class="subtitle">MinerU 在线解析</span>
     </div>
     <button class="btn secondary" @click="showHelp = true">❓ 帮助</button>
-    <button v-if="isElectron" class="btn secondary" @click="checkUpdate">🔄 检查更新</button>
+    <button v-if="isElectron" class="btn secondary" @click="handleCheckUpdate">🔄 检查更新</button>
     <button class="btn primary" @click="$emit('upload')">＋ 上传 PDF</button>
   </header>
 
@@ -106,13 +106,21 @@ onMounted(() => {
   // 检测是否为 Electron 环境
   isElectron.value = window.location.protocol === 'file:' || navigator.userAgent.includes('Electron');
 
+  console.log('TopBar mounted, isElectron:', isElectron.value, 'protocol:', window.location.protocol, 'userAgent:', navigator.userAgent);
+
   // Electron 环境自动检查更新
   if (isElectron.value) {
     checkUpdate(true);
   }
 });
 
+function handleCheckUpdate() {
+  console.log('点击检查更新按钮');
+  checkUpdate(false);
+}
+
 async function checkUpdate(silent = false) {
+  console.log('开始检查更新, silent:', silent);
   try {
     // Electron 环境使用公网地址，网页版使用相对路径
     const apiUrl = isElectron.value

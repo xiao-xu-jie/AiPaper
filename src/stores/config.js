@@ -193,6 +193,15 @@ export const useConfigStore = defineStore('config', {
       this.aiModel = '';
     },
 
+    // 快捷切换(对话/笔记场景即时生效,不弹 dirty)
+    quickSwitch(providerId, modelId) {
+      this.currentProviderId = providerId;
+      this.aiModel = modelId;
+      localStorage.setItem('ai_current_provider', this.currentProviderId);
+      localStorage.setItem('ai_model', this.aiModel);
+      this._applyAgent();
+    },
+
     addProvider(name, baseUrl, apiKey = '') {
       const id = 'custom_' + Date.now().toString(36);
       this.providers.push({ id, name, baseUrl, apiKey, builtin: false, models: [], customModels: [] });

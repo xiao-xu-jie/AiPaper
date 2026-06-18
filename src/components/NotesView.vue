@@ -2,6 +2,7 @@
   <div class="notes-wrap">
     <div class="notes-toolbar">
       <span class="notes-status">{{ statusText }}</span>
+      <ModelSwitcher />
       <button class="btn small" :disabled="generating" @click="generate">
         {{ generating ? '生成中...' : '✨ AI 生成笔记' }}
       </button>
@@ -73,6 +74,7 @@ import { useConfigStore } from '../stores/config.js';
 import { parseMarkdown, renderMarkdown, renderMath } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import * as agent from '../lib/agent.js';
+import ModelSwitcher from './ModelSwitcher.vue';
 
 const papers = usePapersStore();
 const cfg = useConfigStore();

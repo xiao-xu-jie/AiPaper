@@ -53,6 +53,7 @@
       <button v-if="ctxMenu.text" @click="copyAsMarkdown">📋 复制为 Markdown</button>
       <button v-if="ctxMenu.text" @click="copyAsPlainText">📋 复制为纯文本</button>
       <button v-if="ctxMenu.text" @click="askAboutText">💬 向 AI 提问选中内容</button>
+      <button v-if="ctxMenu.text" @click="translateSelection">🌐 翻译选中内容</button>
     </div>
     <div v-if="ctxMenu.show" class="ctx-backdrop" @click="ctxMenu.show = false" @contextmenu.prevent="ctxMenu.show = false" />
 
@@ -67,11 +68,14 @@
 <script setup>
 import { ref, computed, reactive, onMounted } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
-import { renderMarkdown } from '../lib/render.js';
+import { useConfigStore } from '../stores/config.js';
+import { renderMarkdown, parseMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
+import * as agent from '../lib/agent.js';
 import NotesView from './NotesView.vue';
 
 const papers = usePapersStore();
+const cfg = useConfigStore();
 const emit = defineEmits(['toggleChat', 'askImage', 'askText']);
 const view = ref('md');
 const mdBox = ref(null);
@@ -80,6 +84,7 @@ const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '' });
 const preview = reactive({ show: false, src: '' });
 const showOutline = ref(true);
 const outline = ref([]);
+const translations = ref([]);
 
 const paper = computed(() => papers.currentPaper);
 const title = computed(() => paper.value?.title || '未选择论文');
@@ -112,6 +117,8 @@ onMounted(async () => {
     await renderMarkdown(mdBox.value, md, id);
     mdBox.value.addEventListener('click', onImageClick);
     outline.value = extractOutline();
+    translations.value = await store.loadTranslations(id).catch(() => []);
+    restoreTranslationBlocks();
   }
   if (pdfFrame.value) {
     const url = await store.getPdfUrl(id).catch(() => null);
@@ -141,6 +148,103 @@ function onContextMenu(e) {
 function askAboutText() {
   ctxMenu.show = false;
   emit('askText', ctxMenu.text);
+}
+
+// ---------- 翻译 ----------
+function findAnchorElement(selectedText) {
+  if (!mdBox.value) return null;
+  const walker = document.createTreeWalker(mdBox.value, NodeFilter.SHOW_TEXT, null);
+  while (walker.nextNode()) {
+    if (walker.currentNode.textContent.includes(selectedText)) {
+      let el = walker.currentNode.parentElement;
+      while (el && el !== mdBox.value && el.parentElement !== mdBox.value) {
+        el = el.parentElement;
+      }
+      return el;
+    }
+  }
+  return null;
+}
+
+function createTranslationBlock(trans) {
+  const block = document.createElement('div');
+  block.className = 'translation-block';
+  block.dataset.id = trans.id;
+  block.innerHTML = `
+    <div class="translation-header">
+      <span class="translation-label">🌐 翻译</span>
+      <button class="translation-copy" title="复制译文">📋</button>
+      <button class="translation-remove" title="删除翻译">✕</button>
+    </div>
+    <div class="translation-body"></div>
+  `;
+  block.querySelector('.translation-remove').addEventListener('click', () => removeTranslation(trans.id));
+  block.querySelector('.translation-copy').addEventListener('click', () => {
+    navigator.clipboard.writeText(trans.translation || '');
+  });
+  return block;
+}
+
+function renderTranslationBody(block, text) {
+  const body = block.querySelector('.translation-body');
+  body.innerHTML = parseMarkdown(text);
+}
+
+async function translateSelection() {
+  ctxMenu.show = false;
+  const selectedText = ctxMenu.text;
+  if (!selectedText) return;
+  if (!cfg.aiUrl || !cfg.aiModel) {
+    emit('askText', '__toast:请先配置 AI 模型');
+    return;
+  }
+
+  const anchor = findAnchorElement(selectedText);
+  const id = 'tr_' + Date.now().toString(36);
+  const trans = { id, anchorText: selectedText, translation: '', createdAt: Date.now() };
+  const block = createTranslationBlock(trans);
+  if (anchor && anchor.parentElement) {
+    anchor.insertAdjacentElement('afterend', block);
+  } else if (mdBox.value) {
+    mdBox.value.appendChild(block);
+  }
+  block.querySelector('.translation-body').innerHTML = '<span class="cursor">翻译中...▌</span>';
+
+  const prompt = `请将以下内容翻译为中文，保持学术准确性，保留专业术语和公式符号，只输出译文不要解释：\n\n${selectedText}`;
+  try {
+    let result = '';
+    await agent.chat([], prompt, [], (chunk) => {
+      result += chunk;
+      renderTranslationBody(block, result + '<span class="cursor">▌</span>');
+    });
+    trans.translation = result;
+    renderTranslationBody(block, result);
+    translations.value.push(trans);
+    await store.saveTranslations(papers.currentId, translations.value);
+  } catch (e) {
+    renderTranslationBody(block, `翻译失败：${e.message}`);
+  }
+}
+
+function removeTranslation(id) {
+  translations.value = translations.value.filter((t) => t.id !== id);
+  store.saveTranslations(papers.currentId, translations.value).catch(() => {});
+  const block = mdBox.value?.querySelector(`.translation-block[data-id="${id}"]`);
+  if (block) block.remove();
+}
+
+function restoreTranslationBlocks() {
+  if (!mdBox.value || !translations.value.length) return;
+  translations.value.forEach((trans) => {
+    const anchor = findAnchorElement(trans.anchorText);
+    const block = createTranslationBlock(trans);
+    renderTranslationBody(block, trans.translation);
+    if (anchor && anchor.parentElement) {
+      anchor.insertAdjacentElement('afterend', block);
+    } else if (mdBox.value) {
+      mdBox.value.appendChild(block);
+    }
+  });
 }
 
 async function askAboutImage() {
@@ -343,4 +447,23 @@ function onNotesAskText(text) {
   transition: background .2s;
 }
 .copy-btn:hover { background: #f0f1f3; }
+.md-view :deep(.translation-block) {
+  margin: 12px 0; padding: 12px 16px;
+  background: #f0f7ff; border-left: 3px solid var(--primary); border-radius: 0 8px 8px 0;
+}
+.md-view :deep(.translation-header) {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.md-view :deep(.translation-label) { font-size: 12px; color: var(--primary); font-weight: 600; }
+.md-view :deep(.translation-copy),
+.md-view :deep(.translation-remove) {
+  border: none; background: transparent; cursor: pointer; font-size: 14px;
+  padding: 2px 6px; border-radius: 4px; color: var(--muted); transition: .15s;
+}
+.md-view :deep(.translation-copy) { margin-left: auto; }
+.md-view :deep(.translation-copy:hover) { background: rgba(0,0,0,.06); }
+.md-view :deep(.translation-remove:hover) { background: rgba(0,0,0,.06); color: var(--red); }
+.md-view :deep(.translation-body) { font-size: 14px; line-height: 1.7; color: var(--text); }
+.md-view :deep(.translation-body p) { margin: .3em 0; }
+.md-view :deep(.cursor) { animation: blink .7s step-end infinite; }
 </style>

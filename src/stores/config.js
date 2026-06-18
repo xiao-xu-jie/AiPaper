@@ -147,13 +147,12 @@ export const useConfigStore = defineStore('config', {
       this._applyAgent();
     },
 
-    // 从 proxy /api/providers 拉取预设提供商,合并到 providers(保留用户的 customModels 和自定义 provider)
+    // 从 /api/providers 拉取预设提供商,合并到 providers(保留用户的 customModels 和自定义 provider)
+    // Electron 用公网 aipaper.chat,网页版用同源 /api/providers(经 proxy)
     async loadBuiltinProviders() {
       try {
         const isElectron = window.location.protocol === 'file:' || navigator.userAgent.includes('Electron');
-        const fetchUrl = isElectron
-          ? 'http://localhost:8788/api/providers'
-          : '/api/providers';
+        const fetchUrl = isElectron ? 'https://aipaper.chat/api/providers' : '/api/providers';
         const res = await fetch(fetchUrl);
         const data = await res.json();
         const builtins = data.providers || [];

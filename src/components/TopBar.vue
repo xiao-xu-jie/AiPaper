@@ -5,11 +5,16 @@
       <span class="title">AI Paper</span>
       <span class="subtitle">MinerU 在线解析</span>
     </div>
+    <button class="btn secondary" @click="showMinerUConfig = true">⚙️ MinerU</button>
+    <button class="btn secondary" @click="showAIConfig = true">🤖 AI 模型</button>
     <button class="btn secondary" @click="showHelp = true">❓ 帮助</button>
     <button v-if="isElectron" class="btn secondary" @click="handleCheckUpdate">🔄 检查更新</button>
     <button v-if="!isElectron" class="btn secondary" @click="goToDownload">📥 下载客户端</button>
     <button class="btn primary" @click="$emit('upload')">＋ 上传 PDF</button>
   </header>
+
+  <MinerUConfigDialog v-model="showMinerUConfig" @pickDir="$emit('pickDir')" />
+  <AIConfigDialog v-model="showAIConfig" />
 
   <Teleport to="body">
     <div v-if="showHelp" class="help-overlay" @click="showHelp = false">
@@ -23,28 +28,27 @@
             <h3>1️⃣ 配置 MinerU Token</h3>
             <p>用于 PDF 解析服务</p>
             <ol>
-              <li>点击 MinerU Token 输入框右侧的 🔗 按钮</li>
-              <li>在打开的页面注册/登录 mineru.net</li>
-              <li>进入 API 管理页面创建 Token</li>
-              <li>复制 Token 粘贴到输入框中</li>
+              <li>点击顶部「⚙️ MinerU」按钮打开配置弹窗</li>
+              <li>点击 Token 输入框右侧的 🔗 按钮，前往 mineru.net</li>
+              <li>在 API 管理页面创建 Token</li>
+              <li>复制 Token 粘贴到输入框中，点「保存」</li>
             </ol>
           </section>
 
           <section>
-            <h3>2️⃣ 配置 AI 接口（可选）</h3>
+            <h3>2️⃣ 配置 AI 模型（可选）</h3>
             <p>用于 AI 助手对话和自动生成笔记</p>
             <ul>
-              <li><strong>AI 接口地址</strong>：OpenAI 兼容的 API 地址，例如：
-                <code>https://api.openai.com/v1</code>
-              </li>
-              <li><strong>AI 密钥</strong>：对应服务的 API Key</li>
-              <li><strong>AI 模型</strong>：配置好接口后点击刷新按钮自动获取模型列表，或手动输入模型名称（如 <code>gpt-4o</code>）</li>
+              <li>点击顶部「🤖 AI 模型」按钮打开配置弹窗</li>
+              <li><strong>选择提供商</strong>：内置免费提供商（OpenCode Zen / Kilo）可直接使用，也可点「+ 提供商」添加自定义</li>
+              <li><strong>选择模型</strong>：从下拉列表选择，或点 ↻ 获取模型列表，或点 + 添加自定义模型</li>
+              <li>自定义提供商可点 ⚙️ 编辑名称、接口地址、密钥</li>
             </ul>
           </section>
 
           <section>
             <h3>3️⃣ 选择数据文件夹</h3>
-            <p>点击「📁 选择数据文件夹」按钮，选择一个本地文件夹用于存储：</p>
+            <p>在「⚙️ MinerU」配置弹窗中点「📁 选择数据文件夹」，选择一个本地文件夹用于存储：</p>
             <ul>
               <li>上传的 PDF 原文</li>
               <li>解析后的 Markdown 内容</li>
@@ -96,9 +100,13 @@
 
 <script setup>
 import { ref, onMounted, inject } from 'vue';
-defineEmits(['upload']);
+import MinerUConfigDialog from './MinerUConfigDialog.vue';
+import AIConfigDialog from './AIConfigDialog.vue';
+defineEmits(['upload', 'pickDir']);
 
 const showHelp = ref(false);
+const showMinerUConfig = ref(false);
+const showAIConfig = ref(false);
 const isElectron = ref(false);
 const updateAvailable = ref(false);
 const currentVersion = ref('2.0.0');

@@ -7,8 +7,7 @@
     </div>
   </div>
 
-  <TopBar @upload="triggerUpload" />
-  <ConfigPanel @pickDir="pickDir" />
+  <TopBar @upload="triggerUpload" @pickDir="pickDir" />
 
   <div v-if="restoreHandle" class="restore-bar">
     <span>检测到上次使用的数据文件夹，是否恢复历史数据？</span>
@@ -19,8 +18,8 @@
     <div class="nd-card">
       <h2>开始使用</h2>
       <ol>
-        <li>填写 MinerU Token 并点「保存设置」</li>
-        <li>点「选择数据文件夹」指定本地存储位置</li>
+        <li>点击顶部「⚙️ MinerU」配置 Token，保存后点「📁 选择数据文件夹」</li>
+        <li>（可选）点击「🤖 AI 模型」配置 AI 助手和笔记生成</li>
         <li>上传 PDF 论文，等待解析完成即可在线预览</li>
       </ol>
       <p class="hint">所有数据保存在你选择的文件夹中，下次自动加载。</p>
@@ -46,7 +45,6 @@
 <script setup>
 import { ref, onMounted, provide, nextTick } from 'vue';
 import TopBar from './components/TopBar.vue';
-import ConfigPanel from './components/ConfigPanel.vue';
 import Sidebar from './components/Sidebar.vue';
 import Viewer from './components/Viewer.vue';
 import ChatPanel from './components/ChatPanel.vue';

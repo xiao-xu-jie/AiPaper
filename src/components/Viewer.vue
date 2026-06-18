@@ -481,6 +481,7 @@ function createAnnotationBlock(ann) {
   block.dataset.id = ann.id;
   block.dataset.color = ann.color;
   block.style.borderLeftColor = getColorMark(ann.color);
+  block.title = '点击定位到原文';
   block.innerHTML = `
     <div class="annotation-header">
       <span class="annotation-label">📝 注解</span>
@@ -490,8 +491,16 @@ function createAnnotationBlock(ann) {
     <div class="annotation-body"></div>
   `;
   block.querySelector('.annotation-body').textContent = ann.note;
-  block.querySelector('.annotation-edit').addEventListener('click', () => editAnnotation(ann.id));
-  block.querySelector('.annotation-remove').addEventListener('click', () => removeAnnotation(ann.id));
+  block.querySelector('.annotation-edit').addEventListener('click', (e) => { e.stopPropagation(); editAnnotation(ann.id); });
+  block.querySelector('.annotation-remove').addEventListener('click', (e) => { e.stopPropagation(); removeAnnotation(ann.id); });
+  block.addEventListener('click', () => {
+    const mark = mdBox.value?.querySelector(`mark.annotated-text[data-id="${ann.id}"]`);
+    if (mark) {
+      mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      mark.classList.add('annotation-flash');
+      setTimeout(() => mark.classList.remove('annotation-flash'), 1500);
+    }
+  });
   return block;
 }
 
@@ -773,6 +782,10 @@ function onNotesAskText(text) {
 }
 .md-view :deep(.annotation-block.annotation-flash) {
   box-shadow: 0 0 0 3px #ffd54f;
+}
+.md-view :deep(mark.annotated-text.annotation-flash) {
+  box-shadow: 0 0 0 3px #ffd54f;
+  border-radius: 3px;
 }
 .md-view :deep(.annotation-header) {
   display: flex; align-items: center; gap: 8px; margin-bottom: 6px;

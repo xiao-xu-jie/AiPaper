@@ -144,6 +144,45 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // 预设免费 AI 提供商列表
+  if (url.pathname === '/api/providers') {
+    setCors(res);
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({
+      providers: [
+        {
+          id: 'opencode-zen',
+          name: 'OpenCode Zen (Free)',
+          baseUrl: 'https://opencode.ai/zen/v1',
+          apiKey: '',
+          builtin: true,
+          models: [
+            { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash' },
+            { id: 'mimo-v2.5-free', name: 'MimoV2.5' },
+            { id: 'nemotron-3-ultra-free', name: 'Nemotron 3 Ultra' },
+            { id: 'nemotron-3-super-free', name: 'Nemotron 3 Super' },
+          ],
+        },
+        {
+          id: 'kilo',
+          name: 'Kilo (Free Router)',
+          baseUrl: 'https://api.kilo.ai/api/gateway',
+          apiKey: '',
+          builtin: true,
+          models: [
+            { id: 'kilo-auto/free', name: 'Kilo Auto (Free Router)' },
+          ],
+        },
+      ],
+    }));
+    return;
+  }
+
   handleStatic(req, res, url.pathname);
 });
 

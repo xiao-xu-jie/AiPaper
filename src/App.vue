@@ -77,7 +77,7 @@ function toast(msg, type = 'info') {
 provide('toast', toast);
 
 onMounted(async () => {
-  cfg.init();
+  await cfg.init();
   const handle = await store.restoreDirectory();
   if (handle) {
     if (store.getRoot()) {

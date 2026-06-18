@@ -113,28 +113,128 @@ export const useConfigStore = defineStore('config', {
     token: localStorage.getItem('mineru_token') || '',
     model: localStorage.getItem('mineru_model') || 'vlm',
     lang: localStorage.getItem('mineru_lang') || 'ch',
-    aiUrl: localStorage.getItem('ai_url') || '',
-    aiModel: localStorage.getItem('ai_model') || '',
-    aiKey: localStorage.getItem('ai_key') || '',
     noteTemplate: localStorage.getItem('note_template') || DEFAULT_NOTE_TEMPLATE,
+    providers: JSON.parse(localStorage.getItem('ai_providers') || '[]'),
+    currentProviderId: localStorage.getItem('ai_current_provider') || '',
+    aiModel: localStorage.getItem('ai_model') || '',
   }),
+  getters: {
+    currentProvider(state) {
+      return state.providers.find((p) => p.id === state.currentProviderId) || null;
+    },
+    aiUrl(state) {
+      const p = state.providers.find((p) => p.id === state.currentProviderId);
+      return p?.baseUrl || '';
+    },
+    aiKey(state) {
+      const p = state.providers.find((p) => p.id === state.currentProviderId);
+      return p?.apiKey || '';
+    },
+    currentModels(state) {
+      const p = state.providers.find((p) => p.id === state.currentProviderId);
+      if (!p) return [];
+      return [...(p.models || []), ...(p.customModels || [])];
+    },
+  },
   actions: {
-    init() {
+    async init() {
       const effectiveProxy = autoProxyPrefix();
       mineru.setProxy(effectiveProxy);
-      agent.configure(this.aiUrl, this.aiModel, this.aiKey);
+      await this.loadBuiltinProviders();
+      if (!this.currentProviderId && this.providers.length) {
+        this.currentProviderId = this.providers[0].id;
+      }
+      this._applyAgent();
     },
+
+    // 从 proxy /api/providers 拉取预设提供商,合并到 providers(保留用户的 customModels 和自定义 provider)
+    async loadBuiltinProviders() {
+      try {
+        const isElectron = window.location.protocol === 'file:' || navigator.userAgent.includes('Electron');
+        const fetchUrl = isElectron
+          ? 'http://localhost:8788/api/providers'
+          : '/api/providers';
+        const res = await fetch(fetchUrl);
+        const data = await res.json();
+        const builtins = data.providers || [];
+        const custom = this.providers.filter((p) => !p.builtin);
+        const merged = builtins.map((b) => {
+          const existing = this.providers.find((p) => p.id === b.id);
+          return existing
+            ? { ...b, apiKey: existing.apiKey, customModels: existing.customModels || [] }
+            : b;
+        });
+        this.providers = [...merged, ...custom];
+      } catch (e) {
+        console.warn('加载预设提供商失败:', e.message);
+      }
+    },
+
     save() {
       localStorage.setItem('mineru_token', this.token);
       localStorage.setItem('mineru_model', this.model);
       localStorage.setItem('mineru_lang', this.lang);
-      localStorage.setItem('ai_url', this.aiUrl);
-      localStorage.setItem('ai_model', this.aiModel);
-      localStorage.setItem('ai_key', this.aiKey);
       localStorage.setItem('note_template', this.noteTemplate);
+      localStorage.setItem('ai_providers', JSON.stringify(this.providers));
+      localStorage.setItem('ai_current_provider', this.currentProviderId);
+      localStorage.setItem('ai_model', this.aiModel);
       const effectiveProxy = autoProxyPrefix();
       mineru.setProxy(effectiveProxy);
-      agent.configure(this.aiUrl, this.aiModel, this.aiKey);
+      this._applyAgent();
+    },
+
+    _applyAgent() {
+      const p = this.currentProvider;
+      agent.configure(p?.baseUrl || '', this.aiModel, p?.apiKey || '');
+    },
+
+    selectProvider(id) {
+      this.currentProviderId = id;
+      this.aiModel = '';
+    },
+
+    addProvider(name, baseUrl, apiKey = '') {
+      const id = 'custom_' + Date.now().toString(36);
+      this.providers.push({ id, name, baseUrl, apiKey, builtin: false, models: [], customModels: [] });
+      this.currentProviderId = id;
+      this.aiModel = '';
+      return id;
+    },
+
+    removeProvider(id) {
+      const p = this.providers.find((p) => p.id === id);
+      if (!p || p.builtin) return false;
+      this.providers = this.providers.filter((p) => p.id !== id);
+      if (this.currentProviderId === id) {
+        this.currentProviderId = this.providers[0]?.id || '';
+        this.aiModel = '';
+      }
+      return true;
+    },
+
+    updateProvider(id, patch) {
+      const p = this.providers.find((p) => p.id === id);
+      if (p) Object.assign(p, patch);
+    },
+
+    setProviderModels(id, models) {
+      const p = this.providers.find((p) => p.id === id);
+      if (p) p.models = models;
+    },
+
+    addCustomModel(id, modelId, modelName = '') {
+      const p = this.providers.find((p) => p.id === id);
+      if (p) {
+        if (!p.customModels) p.customModels = [];
+        p.customModels.push({ id: modelId, name: modelName || modelId });
+      }
+    },
+
+    removeCustomModel(providerId, modelId) {
+      const p = this.providers.find((p) => p.id === providerId);
+      if (p && p.customModels) {
+        p.customModels = p.customModels.filter((m) => m.id !== modelId);
+      }
     },
   },
 });

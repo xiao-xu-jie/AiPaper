@@ -33,7 +33,7 @@
         </nav>
       </aside>
       <button v-if="view === 'md' && !showOutline && outline.length" class="outline-show-btn" @click="showOutline = true">☰ 目录</button>
-      <article v-show="view === 'md'" ref="mdBox" class="md-view markdown-body" @contextmenu="onContextMenu">
+      <article v-show="view === 'md'" ref="mdBox" class="md-view markdown-body" @contextmenu="onContextMenu" @mouseover="onHover" @mouseout="clearHover">
         <div v-if="!paper" class="placeholder">选择或上传一篇论文以查看解析结果</div>
         <div v-else-if="paper.state === 'failed'" class="placeholder error">解析失败：{{ paper.error }}</div>
         <div v-else-if="paper.state !== 'done'" class="placeholder">解析完成后将在此显示 Markdown 内容</div>
@@ -53,7 +53,7 @@
       <button v-if="ctxMenu.text" @click="copyAsMarkdown">📋 复制为 Markdown</button>
       <button v-if="ctxMenu.text" @click="copyAsPlainText">📋 复制为纯文本</button>
       <button v-if="ctxMenu.text" @click="askAboutText">💬 向 AI 提问选中内容</button>
-      <button v-if="ctxMenu.text" @click="translateSelection">🌐 翻译选中内容</button>
+      <button v-if="ctxMenu.text" @click="translateSelection">🌐 {{ ctxMenu.hasSelection ? '翻译选中内容' : '翻译此段落' }}</button>
     </div>
     <div v-if="ctxMenu.show" class="ctx-backdrop" @click="ctxMenu.show = false" @contextmenu.prevent="ctxMenu.show = false" />
 
@@ -80,7 +80,7 @@ const emit = defineEmits(['toggleChat', 'askImage', 'askText']);
 const view = ref('md');
 const mdBox = ref(null);
 const pdfFrame = ref(null);
-const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '' });
+const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '', hasSelection: false });
 const preview = reactive({ show: false, src: '' });
 const showOutline = ref(true);
 const outline = ref([]);
@@ -126,6 +126,16 @@ onMounted(async () => {
   }
 });
 
+function onHover(e) {
+  const block = findHoverBlock(e.target);
+  if (block) block.classList.add('hover-block');
+}
+
+function clearHover(e) {
+  const block = findHoverBlock(e.target);
+  if (block) block.classList.remove('hover-block');
+}
+
 function onImageClick(e) {
   if (e.target.tagName === 'IMG') {
     preview.src = e.target.src;
@@ -133,13 +143,29 @@ function onImageClick(e) {
   }
 }
 
+// 找到鼠标所在的最接近 mdBox 直接子元素的段落块
+function findHoverBlock(target) {
+  if (!mdBox.value || !target || target === mdBox.value) return null;
+  let el = target;
+  while (el && el.parentElement !== mdBox.value) {
+    el = el.parentElement;
+    if (!el) return null;
+  }
+  const tag = el?.tagName;
+  if (!tag) return null;
+  const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'BLOCKQUOTE', 'PRE', 'DD', 'DT'];
+  return blockTags.includes(tag) ? el : null;
+}
+
 function onContextMenu(e) {
   const isImg = e.target.tagName === 'IMG';
   const selectedText = window.getSelection()?.toString().trim() || '';
-  if (!isImg && !selectedText) return;
+  const hoverBlock = findHoverBlock(e.target);
+  if (!isImg && !selectedText && !hoverBlock) return;
   e.preventDefault();
   ctxMenu.src = isImg ? e.target.src : '';
-  ctxMenu.text = selectedText;
+  ctxMenu.text = selectedText || (hoverBlock ? hoverBlock.textContent.trim() : '');
+  ctxMenu.hasSelection = !!selectedText;
   ctxMenu.x = e.clientX;
   ctxMenu.y = e.clientY;
   ctxMenu.show = true;
@@ -415,6 +441,12 @@ function onNotesAskText(text) {
 .md-view .placeholder.error { color: var(--red); }
 .md-view :deep(img) { cursor: pointer; transition: opacity .2s; }
 .md-view :deep(img:hover) { opacity: 0.85; }
+.md-view :deep(.hover-block) {
+  background: #f0f4f8;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px #e0e7ff;
+  cursor: context-menu;
+}
 .pdf-wrap { height: 100%; flex: 1; }
 .pdf-wrap iframe { width: 100%; height: 100%; border: none; }
 .img-ctx-menu {

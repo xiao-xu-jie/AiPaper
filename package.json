@@ -1,6 +1,6 @@
 {
   "name": "aipaper",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "基于 MinerU 的论文在线解析与 Markdown 预览工具",
   "type": "module",
   "main": "main.js",

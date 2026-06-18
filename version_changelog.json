@@ -1,8 +1,8 @@
 {
-  "version": "2.0.1",
-  "downloadUrl": "https://github.com/xiao-xu-jie/AiPaper/releases/download/v2.0.1/AI%20Paper%20Setup%202.0.1.exe",
-  "changelog": "✨ 大纲导航 | 📸 图片预览与复制 | 🖱️ 右键快捷菜单 | 🤖 AI 智能助手 | 📝 自动生成笔记 | 🎨 界面优化",
-  "releaseDate": "2026-06-17",
+  "version": "2.1.0",
+  "downloadUrl": "https://github.com/xiao-xu-jie/AiPaper/releases/download/v2.1.0/AI%20Paper%20Setup%202.1.0.exe",
+  "changelog": "🌐 选中翻译 | 🖍 内容高亮 | 📝 注解笔记 | 🤖 多AI提供商 | 🔧 配置弹窗化 | ⚡ 快捷切换模型",
+  "releaseDate": "2026-06-18",
   "changes": {
     "新功能": [
       "支持 Markdown 和阅读笔记的大纲导航，快速跳转章节",

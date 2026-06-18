@@ -7,33 +7,36 @@
 //
 // 同时它也作为静态服务器托管本目录，方便用 http://localhost:8788/ 打开应用。
 
-import http from 'node:http';
-import https from 'node:https';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import http from "node:http";
+import https from "node:https";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const PORT = process.env.PORT || 8788;
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.ico': 'image/x-icon',
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".ico": "image/x-icon",
 };
 
 function setCors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization,Content-Type,Accept');
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Authorization,Content-Type,Accept",
+  );
 }
 
 // 转发请求到目标 URL，补 CORS。
@@ -45,66 +48,93 @@ function setCors(res) {
 //  3) 先把请求体完整缓冲再转发，并对所有流加错误处理，确保代理永不崩溃。
 function handleProxy(req, res, target) {
   const chunks = [];
-  req.on('data', (c) => chunks.push(c));
-  req.on('error', () => {}); // 忽略客户端中断，避免抛出未处理错误
-  req.on('end', () => {
+  req.on("data", (c) => chunks.push(c));
+  req.on("error", () => {}); // 忽略客户端中断，避免抛出未处理错误
+  req.on("end", () => {
     const body = Buffer.concat(chunks);
-    const lib = target.startsWith('https') ? https : http;
+    const lib = target.startsWith("https") ? https : http;
     let u;
-    try { u = new URL(target); } catch {
-      setCors(res); res.writeHead(400); res.end('bad url'); return;
+    try {
+      u = new URL(target);
+    } catch {
+      setCors(res);
+      res.writeHead(400);
+      res.end("bad url");
+      return;
     }
 
-    const ctype = (req.headers['content-type'] || '').toLowerCase();
+    const ctype = (req.headers["content-type"] || "").toLowerCase();
     const headers = { host: u.host };
-    if (body.length) headers['content-length'] = body.length;
+    if (body.length) headers["content-length"] = body.length;
     // 仅对 JSON（MinerU API）转发 content-type；OSS 上传必须不带
-    if (ctype.includes('application/json')) headers['content-type'] = req.headers['content-type'];
-    if (req.headers.authorization) headers.authorization = req.headers.authorization;
+    if (ctype.includes("application/json"))
+      headers["content-type"] = req.headers["content-type"];
+    if (req.headers.authorization)
+      headers.authorization = req.headers.authorization;
 
-    const proxyReq = lib.request(u, { method: req.method, headers }, (proxyRes) => {
-      setCors(res);
-      res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
-      proxyRes.on('error', () => res.end());
-      proxyRes.pipe(res);
-    });
-    proxyReq.on('error', (err) => {
+    const proxyReq = lib.request(
+      u,
+      { method: req.method, headers },
+      (proxyRes) => {
+        setCors(res);
+        res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+        proxyRes.on("error", () => res.end());
+        proxyRes.pipe(res);
+      },
+    );
+    proxyReq.on("error", (err) => {
       setCors(res);
       try {
-        res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ code: -1, msg: '代理转发失败: ' + err.message }));
-      } catch { /* 响应已发出 */ }
+        res.writeHead(502, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({ code: -1, msg: "代理转发失败: " + err.message }),
+        );
+      } catch {
+        /* 响应已发出 */
+      }
     });
     if (body.length) proxyReq.write(body);
     proxyReq.end();
   });
 }
 
-const DIST = path.join(ROOT, 'dist');
+const DIST = path.join(ROOT, "dist");
 
 function handleStatic(req, res, pathname) {
   const base = fs.existsSync(DIST) ? DIST : ROOT;
   let filePath = path.join(base, decodeURIComponent(pathname));
-  if (pathname === '/' || pathname === '') filePath = path.join(base, 'index.html');
-  if (!filePath.startsWith(base)) { res.writeHead(403); res.end('Forbidden'); return; }
+  if (pathname === "/" || pathname === "")
+    filePath = path.join(base, "index.html");
+  if (!filePath.startsWith(base)) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
   fs.readFile(filePath, (err, data) => {
     if (err) {
       // 如果是请求具体文件（有扩展名），返回 404
       // 只有无扩展名的路径才回退到 index.html（用于 SPA 路由）
       if (path.extname(filePath)) {
         res.writeHead(404);
-        res.end('Not Found');
+        res.end("Not Found");
         return;
       }
-      const indexFile = path.join(base, 'index.html');
+      const indexFile = path.join(base, "index.html");
       fs.readFile(indexFile, (err2, d) => {
-        if (err2) { res.writeHead(404); res.end('Not Found'); return; }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        if (err2) {
+          res.writeHead(404);
+          res.end("Not Found");
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(d);
       });
       return;
     }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+    res.writeHead(200, {
+      "Content-Type":
+        MIME[path.extname(filePath)] || "application/octet-stream",
+    });
     res.end(data);
   });
 }
@@ -112,74 +142,81 @@ function handleStatic(req, res, pathname) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     setCors(res);
     res.writeHead(204);
     res.end();
     return;
   }
 
-  if (url.pathname === '/proxy') {
-    const target = url.searchParams.get('url');
-    if (!target) { res.writeHead(400); res.end('missing url'); return; }
+  if (url.pathname === "/proxy") {
+    const target = url.searchParams.get("url");
+    if (!target) {
+      res.writeHead(400);
+      res.end("missing url");
+      return;
+    }
     handleProxy(req, res, target);
     return;
   }
 
   // 版本检查接口
-  if (url.pathname === '/api/version') {
+  if (url.pathname === "/api/version") {
     setCors(res);
-    if (req.method === 'OPTIONS') {
+    if (req.method === "OPTIONS") {
       res.writeHead(200);
       res.end();
       return;
     }
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({
-      version: '2.0.1',
-      downloadUrl: 'https://github.com/xiao-xu-jie/AiPaper/releases/download/v2.0.1/AI%20Paper%20Setup%202.0.1.exe',
-      changelog: '✨ 大纲导航 | 📸 图片预览与复制 | 🖱️ 右键快捷菜单 | 🤖 AI 智能助手 | 📝 自动生成笔记 | 🎨 界面优化',
-      releaseDate: '2026-06-17'
-    }));
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(
+      JSON.stringify({
+        version: "2.1.0",
+        downloadUrl: "https://cdn.aipaper.chat/AI%20Paper%20Setup%202.1.0.exe",
+        changelog:
+          "🌐 选中翻译 | 🖍 内容高亮 | 📝 注解笔记 | 🤖 多AI提供商 | 🔧 配置弹窗化 | ⚡ 快捷切换模型",
+        releaseDate: "2026-06-18",
+      }),
+    );
     return;
   }
 
   // 预设免费 AI 提供商列表
-  if (url.pathname === '/api/providers') {
+  if (url.pathname === "/api/providers") {
     setCors(res);
-    if (req.method === 'OPTIONS') {
+    if (req.method === "OPTIONS") {
       res.writeHead(200);
       res.end();
       return;
     }
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({
-      providers: [
-        {
-          id: 'opencode-zen',
-          name: 'OpenCode Zen (Free)',
-          baseUrl: 'https://opencode.ai/zen/v1',
-          apiKey: '',
-          builtin: true,
-          models: [
-            { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash' },
-            { id: 'mimo-v2.5-free', name: 'MimoV2.5' },
-            { id: 'nemotron-3-ultra-free', name: 'Nemotron 3 Ultra' },
-            { id: 'nemotron-3-super-free', name: 'Nemotron 3 Super' },
-          ],
-        },
-        {
-          id: 'kilo',
-          name: 'Kilo (Free Router)',
-          baseUrl: 'https://api.kilo.ai/api/gateway',
-          apiKey: '',
-          builtin: true,
-          models: [
-            { id: 'kilo-auto/free', name: 'Kilo Auto (Free Router)' },
-          ],
-        },
-      ],
-    }));
+    res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(
+      JSON.stringify({
+        providers: [
+          {
+            id: "opencode-zen",
+            name: "OpenCode Zen (Free)",
+            baseUrl: "https://opencode.ai/zen/v1",
+            apiKey: "",
+            builtin: true,
+            models: [
+              { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash" },
+              { id: "mimo-v2.5-free", name: "MimoV2.5" },
+              { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra" },
+              { id: "nemotron-3-super-free", name: "Nemotron 3 Super" },
+            ],
+          },
+          {
+            id: "kilo",
+            name: "Kilo (Free Router)",
+            baseUrl: "https://api.kilo.ai/api/gateway",
+            apiKey: "",
+            builtin: true,
+            models: [{ id: "kilo-auto/free", name: "Kilo Auto (Free Router)" }],
+          },
+        ],
+      }),
+    );
     return;
   }
 

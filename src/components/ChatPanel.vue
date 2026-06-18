@@ -7,7 +7,6 @@
       <input v-else ref="titleInput" v-model="titleDraft" class="chat-title-input" @blur="commitEdit" @keydown.enter="commitEdit" />
       <button class="btn small" title="编辑标题" @click="startEdit">✎</button>
       <button class="btn small" title="新建会话" @click="chat.newSession()">＋</button>
-      <ModelSwitcher class="chat-switcher" />
       <button class="btn small" title="关闭" @click="$emit('close')">✕</button>
     </div>
 
@@ -41,7 +40,10 @@
         @keydown.enter.exact.prevent="send"
         @paste="onPaste"
       />
-      <button class="btn primary" :disabled="chat.busy" @click="send">发送</button>
+      <div class="chat-input-bar">
+        <ModelSwitcher />
+        <button class="btn primary" :disabled="chat.busy" @click="send">发送</button>
+      </div>
     </div>
   </aside>
 
@@ -189,7 +191,8 @@ defineExpose({
 .chat-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; font-size: 13px; }
 .chat-title:hover { color: var(--primary); }
 .chat-title-input { flex: 1; border: 1px solid var(--primary); border-radius: 5px; padding: 2px 6px; font-size: 13px; outline: none; }
-.chat-switcher { margin-left: auto; }
+.chat-input-bar { display: flex; align-items: center; gap: 8px; }
+.chat-input-bar .btn { margin-left: auto; }
 .chat-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .chat-msg { display: flex; flex-direction: column; gap: 4px; max-width: 92%; }
 .chat-msg.user { align-self: flex-end; align-items: flex-end; }

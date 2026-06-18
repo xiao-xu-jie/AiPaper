@@ -31,17 +31,29 @@
           </option>
         </select>
       </label>
-      <button class="btn" @click="showAddProvider = !showAddProvider">+ 添加提供商</button>
+      <label>AI 模型
+        <div class="model-input-wrap">
+          <select v-if="cfg.currentModels.length" v-model="cfg.aiModel" class="model-select">
+            <option value="">-- 选择模型 --</option>
+            <option v-for="m in cfg.currentModels" :key="m.id" :value="m.id">{{ m.name }}</option>
+          </select>
+          <input v-else v-model="cfg.aiModel" type="text" placeholder="点击 ⚙️ 获取模型" />
+          <button v-if="cfg.currentProvider" class="btn-icon" :class="{ loading: fetching }" title="获取模型列表" @click="fetchModels">↻</button>
+          <button v-if="cfg.currentProvider" class="btn-icon" title="添加自定义模型" @click="addCustomModel">+</button>
+        </div>
+      </label>
+      <button v-if="cfg.currentProvider" class="btn-icon" :class="{ active: showProviderDetail }" title="提供商设置" @click="showProviderDetail = !showProviderDetail">⚙️</button>
+      <button class="btn" @click="showAddProvider = !showAddProvider">+ 提供商</button>
       <button class="btn" :class="{ unsaved: dirty }" @click="cfg.save(); dirty = false">
-        保存设置{{ dirty ? ' *' : '' }}
+        保存{{ dirty ? ' *' : '' }}
       </button>
-      <button class="btn" @click="$emit('pickDir')">📁 选择数据文件夹</button>
+      <button class="btn" @click="$emit('pickDir')">📁 数据文件夹</button>
       <button class="btn" @click="showTemplate = !showTemplate">📝 笔记模板</button>
     </div>
 
-    <div v-if="cfg.currentProvider" class="provider-detail">
+    <div v-if="cfg.currentProvider && showProviderDetail" class="provider-detail">
       <div class="config-row">
-        <label>提供商名称
+        <label>名称
           <input
             :value="cfg.currentProvider.name"
             type="text"
@@ -50,16 +62,13 @@
           />
         </label>
         <label>接口地址
-          <div class="model-input-wrap">
-            <input
-              :value="cfg.currentProvider.baseUrl"
-              type="text"
-              :readonly="cfg.currentProvider.builtin"
-              @input="cfg.updateProvider(cfg.currentProviderId, { baseUrl: $event.target.value })"
-              @blur="fetchModels"
-            />
-            <button class="btn-icon" :class="{ loading: fetching }" title="获取模型列表" @click="fetchModels">↻</button>
-          </div>
+          <input
+            :value="cfg.currentProvider.baseUrl"
+            type="text"
+            :readonly="cfg.currentProvider.builtin"
+            @input="cfg.updateProvider(cfg.currentProviderId, { baseUrl: $event.target.value })"
+            @blur="fetchModels"
+          />
         </label>
         <label>密钥
           <input
@@ -70,30 +79,18 @@
             @blur="fetchModels"
           />
         </label>
-      </div>
-      <div class="config-row">
-        <label>AI 模型
-          <div class="model-input-wrap">
-            <select v-if="cfg.currentModels.length" v-model="cfg.aiModel" class="model-select">
-              <option value="">-- 选择模型 --</option>
-              <option v-for="m in cfg.currentModels" :key="m.id" :value="m.id">{{ m.name }}</option>
-            </select>
-            <input v-else v-model="cfg.aiModel" type="text" placeholder="点击 ↻ 获取模型列表" />
-            <button class="btn-icon" title="添加自定义模型" @click="addCustomModel">+</button>
-          </div>
-        </label>
-        <div v-if="cfg.currentProvider.customModels?.length" class="custom-models">
-          <span class="custom-models-label">自定义模型：</span>
-          <span v-for="m in cfg.currentProvider.customModels" :key="m.id" class="custom-model-tag">
-            {{ m.id }}
-            <button class="tag-remove" @click="cfg.removeCustomModel(cfg.currentProviderId, m.id)">×</button>
-          </span>
-        </div>
         <button
           v-if="!cfg.currentProvider.builtin"
           class="btn btn-danger"
           @click="removeCurrentProvider"
-        >🗑 删除提供商</button>
+        >🗑 删除</button>
+      </div>
+      <div v-if="cfg.currentProvider.customModels?.length" class="custom-models">
+        <span class="custom-models-label">自定义模型：</span>
+        <span v-for="m in cfg.currentProvider.customModels" :key="m.id" class="custom-model-tag">
+          {{ m.id }}
+          <button class="tag-remove" @click="cfg.removeCustomModel(cfg.currentProviderId, m.id)">×</button>
+        </span>
       </div>
     </div>
 
@@ -108,9 +105,7 @@
         <label>密钥（可选）
           <input v-model="newProvider.apiKey" type="password" placeholder="sk-..." />
         </label>
-      </div>
-      <div class="config-row">
-        <button class="btn" @click="confirmAddProvider">确认添加</button>
+        <button class="btn" @click="confirmAddProvider">确认</button>
         <button class="btn" @click="showAddProvider = false">取消</button>
       </div>
     </div>
@@ -131,6 +126,7 @@ const cfg = useConfigStore();
 defineEmits(['pickDir']);
 const showTemplate = ref(false);
 const showAddProvider = ref(false);
+const showProviderDetail = ref(false);
 const dirty = ref(false);
 
 const newProvider = ref({ name: '', baseUrl: '', apiKey: '' });
@@ -197,6 +193,7 @@ function removeCurrentProvider() {
   if (!cfg.currentProvider) return;
   if (!confirm(`确认删除提供商「${cfg.currentProvider.name}」？`)) return;
   cfg.removeProvider(cfg.currentProviderId);
+  showProviderDetail.value = false;
 }
 
 function addCustomModel() {
@@ -210,27 +207,27 @@ function addCustomModel() {
 .config {
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  padding: 12px 20px;
+  padding: 10px 20px;
   flex-shrink: 0;
 }
 .config-row {
-  display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end;
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
 }
-.config-row + .config-row { margin-top: 10px; }
+.config-row + .config-row { margin-top: 8px; }
 label {
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column; gap: 3px;
   font-size: 12px; color: var(--muted);
 }
 input, select {
-  padding: 7px 10px;
+  padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 7px;
   font-size: 14px;
-  min-width: 160px;
+  min-width: 150px;
   color: var(--text);
   background: #fff;
 }
-input[type="password"] { min-width: 220px; }
+input[type="password"] { min-width: 200px; }
 input[readonly] { background: #f5f5f5; color: var(--muted); }
 .input-with-link { display: flex; gap: 4px; align-items: center; }
 .link-btn {
@@ -240,12 +237,14 @@ input[readonly] { background: #f5f5f5; color: var(--muted); }
 }
 .link-btn:hover { background: #f0f1f3; }
 .model-input-wrap { display: flex; gap: 4px; align-items: center; }
-.model-select { min-width: 180px; }
+.model-select { min-width: 170px; }
 .btn-icon {
   border: 1px solid var(--border); background: var(--panel); border-radius: 7px;
-  cursor: pointer; font-size: 16px; padding: 5px 9px; color: var(--text); transition: .15s;
+  cursor: pointer; font-size: 15px; padding: 5px 9px; color: var(--text); transition: .15s;
+  height: 32px;
 }
 .btn-icon:hover { background: #f0f1f3; }
+.btn-icon.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 .btn-icon.loading { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .fetch-error { margin-top: 6px; font-size: 12px; color: var(--red); }
@@ -253,21 +252,22 @@ input[readonly] { background: #f5f5f5; color: var(--muted); }
 .btn-danger { color: var(--red); border-color: var(--red); }
 .btn-danger:hover { background: var(--red); color: #fff; }
 .provider-detail {
-  margin-top: 10px;
-  padding: 12px;
+  margin-top: 8px;
+  padding: 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(0,0,0,0.02);
 }
-.provider-detail .config-row + .config-row { margin-top: 10px; }
+.provider-detail .config-row + .config-row { margin-top: 8px; }
 .add-provider-form {
-  margin-top: 10px;
-  padding: 12px;
+  margin-top: 8px;
+  padding: 10px;
   border: 1px dashed var(--border);
   border-radius: 8px;
 }
 .custom-models {
   display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin-top: 8px;
   font-size: 12px; color: var(--muted);
 }
 .custom-models-label { margin-right: 4px; }
@@ -279,7 +279,7 @@ input[readonly] { background: #f5f5f5; color: var(--muted); }
   border: none; background: none; cursor: pointer; color: var(--red);
   font-size: 14px; padding: 0; line-height: 1;
 }
-.template-editor { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.template-editor { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .template-label { font-size: 12px; color: var(--muted); }
 .template-label code { background: #f0f1f3; padding: 1px 4px; border-radius: 3px; }
 .template-textarea { width: 100%; font-family: "SF Mono", Consolas, monospace; font-size: 13px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; resize: vertical; line-height: 1.6; outline: none; }

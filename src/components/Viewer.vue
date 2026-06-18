@@ -422,15 +422,57 @@ function confirmAnnotation() {
         block.style.borderLeftColor = getColorMark(noteEditor.color);
         block.querySelector('.annotation-body').textContent = ann.note;
       }
+      const mark = mdBox.value?.querySelector(`mark.annotated-text[data-id="${noteEditor.id}"]`);
+      if (mark) {
+        mark.style.background = getColorMark(noteEditor.color);
+        mark.style.borderBottomColor = getColorMark(noteEditor.color);
+      }
     }
   } else {
     const id = 'note_' + Date.now().toString(36);
     const ann = { id, type: 'note', anchorText: noteEditor.anchorText, note: noteEditor.text.trim(), color: noteEditor.color, createdAt: Date.now() };
     annotations.value.push(ann);
+    markAnnotatedText(ann);
     insertAnnotationBlock(ann);
   }
   store.saveAnnotations(papers.currentId, annotations.value).catch(() => {});
   noteEditor.show = false;
+}
+
+// 用 mark 标记被注解的原文,与注解块用 data-id 关联
+function markAnnotatedText(ann) {
+  if (!mdBox.value) return;
+  const walker = document.createTreeWalker(mdBox.value, NodeFilter.SHOW_TEXT, null);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const idx = node.textContent.indexOf(ann.anchorText);
+    if (idx >= 0) {
+      const range = document.createRange();
+      range.setStart(node, idx);
+      range.setEnd(node, idx + ann.anchorText.length);
+      const mark = document.createElement('mark');
+      mark.className = 'annotated-text';
+      mark.dataset.id = ann.id;
+      mark.dataset.color = ann.color;
+      const color = getColorMark(ann.color);
+      mark.style.background = color + '60';
+      mark.style.borderBottom = `2px dashed ${color}`;
+      mark.title = '此段有注解，点击查看';
+      try {
+        range.surroundContents(mark);
+        mark.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const block = mdBox.value?.querySelector(`.annotation-block[data-id="${ann.id}"]`);
+          if (block) {
+            block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            block.classList.add('annotation-flash');
+            setTimeout(() => block.classList.remove('annotation-flash'), 1500);
+          }
+        });
+      } catch { /* 跨节点失败忽略 */ }
+      break;
+    }
+  }
 }
 
 function createAnnotationBlock(ann) {
@@ -468,12 +510,22 @@ function removeAnnotation(id) {
   store.saveAnnotations(papers.currentId, annotations.value).catch(() => {});
   const block = mdBox.value?.querySelector(`.annotation-block[data-id="${id}"]`);
   if (block) block.remove();
+  const mark = mdBox.value?.querySelector(`mark.annotated-text[data-id="${id}"]`);
+  if (mark) {
+    const parent = mark.parentNode;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    parent.normalize();
+  }
 }
 
 function restoreAnnotations() {
   if (!mdBox.value) return;
   restoreHighlights();
-  annotations.value.filter((a) => a.type === 'note').forEach((ann) => insertAnnotationBlock(ann));
+  annotations.value.filter((a) => a.type === 'note').forEach((ann) => {
+    markAnnotatedText(ann);
+    insertAnnotationBlock(ann);
+  });
 }
 
 async function askAboutImage() {
@@ -708,9 +760,19 @@ function onNotesAskText(text) {
 }
 .md-view :deep(mark.user-highlight:hover) { opacity: 0.7; }
 
+.md-view :deep(mark.annotated-text) {
+  border-radius: 3px; padding: 1px 2px; cursor: pointer;
+  transition: background .15s;
+}
+.md-view :deep(mark.annotated-text:hover) { background: rgba(255, 213, 79, 0.4) !important; }
+
 .md-view :deep(.annotation-block) {
   margin: 10px 0; padding: 10px 14px;
   background: #fffde7; border-left: 3px solid #ffd54f; border-radius: 0 8px 8px 0;
+  transition: box-shadow .3s;
+}
+.md-view :deep(.annotation-block.annotation-flash) {
+  box-shadow: 0 0 0 3px #ffd54f;
 }
 .md-view :deep(.annotation-header) {
   display: flex; align-items: center; gap: 8px; margin-bottom: 6px;

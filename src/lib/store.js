@@ -262,8 +262,6 @@ export async function loadFolders() {
 }
 
 // ---------- 翻译 ----------
-// translations: [{ id, anchorText, translation, createdAt }]
-// anchorText 是选中原文(用于定位插入位置),translation 是译文
 export async function saveTranslations(paperId, translations) {
   const dir = await getPaperDir(paperId, true);
   await writeFile(dir, 'translations.json', JSON.stringify(translations, null, 2));
@@ -273,6 +271,21 @@ export async function loadTranslations(paperId) {
   try {
     const dir = await getPaperDir(paperId);
     const txt = await readFileText(dir, 'translations.json');
+    return txt ? JSON.parse(txt) : [];
+  } catch { return []; }
+}
+
+// ---------- 标注(高亮+注解) ----------
+// annotations: [{ id, type: 'highlight'|'note', anchorText, color, note?, createdAt }]
+export async function saveAnnotations(paperId, annotations) {
+  const dir = await getPaperDir(paperId, true);
+  await writeFile(dir, 'annotations.json', JSON.stringify(annotations, null, 2));
+}
+
+export async function loadAnnotations(paperId) {
+  try {
+    const dir = await getPaperDir(paperId);
+    const txt = await readFileText(dir, 'annotations.json');
     return txt ? JSON.parse(txt) : [];
   } catch { return []; }
 }

@@ -54,6 +54,16 @@
       <button v-if="ctxMenu.text" @click="copyAsPlainText">📋 复制为纯文本</button>
       <button v-if="ctxMenu.text" @click="askAboutText">💬 向 AI 提问选中内容</button>
       <button v-if="ctxMenu.text" @click="translateSelection">🌐 {{ ctxMenu.hasSelection ? '翻译选中内容' : '翻译此段落' }}</button>
+      <template v-if="ctxMenu.hasSelection">
+        <div class="ctx-divider"></div>
+        <div class="ctx-submenu">
+          <span class="ctx-submenu-label">🖍 高亮</span>
+          <div class="color-picker">
+            <button v-for="c in highlightColors" :key="c.id" class="color-dot" :style="{ background: c.bg }" :title="c.name" @click="highlightSelection(c.id)" />
+          </div>
+        </div>
+        <button @click="addAnnotation">📝 添加注解</button>
+      </template>
     </div>
     <div v-if="ctxMenu.show" class="ctx-backdrop" @click="ctxMenu.show = false" @contextmenu.prevent="ctxMenu.show = false" />
 
@@ -62,11 +72,31 @@
       <img :src="preview.src" alt="预览" @click.stop />
       <button class="copy-btn" @click.stop="copyImage">📋 复制图片</button>
     </div>
+
+    <!-- 注解编辑弹窗 -->
+    <div v-if="noteEditor.show" class="note-editor-overlay" @click="noteEditor.show = false">
+      <div class="note-editor-modal" @click.stop>
+        <div class="note-editor-header">
+          <span>📝 添加注解</span>
+          <button class="close-btn" @click="noteEditor.show = false">✕</button>
+        </div>
+        <div class="note-editor-anchor">{{ noteEditor.anchorText }}</div>
+        <textarea ref="noteEditorArea" v-model="noteEditor.text" rows="5" placeholder="写下你的注解或笔记..." @keydown.ctrl.enter="confirmAnnotation" />
+        <div class="note-editor-footer">
+          <label class="color-select-label">颜色：
+            <select v-model="noteEditor.color">
+              <option v-for="c in highlightColors" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+          </label>
+          <button class="btn primary small" @click="confirmAnnotation">确认</button>
+        </div>
+      </div>
+    </div>
   </Teleport>
 </template>
 
 <script setup>
-import { ref, computed, reactive, onMounted } from 'vue';
+import { ref, computed, reactive, onMounted, nextTick } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
 import { renderMarkdown, parseMarkdown } from '../lib/render.js';
@@ -85,6 +115,18 @@ const preview = reactive({ show: false, src: '' });
 const showOutline = ref(true);
 const outline = ref([]);
 const translations = ref([]);
+const annotations = ref([]);
+
+const highlightColors = [
+  { id: 'yellow', name: '黄色', bg: '#fff3b0', mark: '#ffd54f' },
+  { id: 'green', name: '绿色', bg: '#c8f7c5', mark: '#a5d6a7' },
+  { id: 'blue', name: '蓝色', bg: '#bbdefb', mark: '#90caf9' },
+  { id: 'pink', name: '粉色', bg: '#f8bbd0', mark: '#f48fb1' },
+  { id: 'orange', name: '橙色', bg: '#ffe0b2', mark: '#ffcc80' },
+];
+
+const noteEditor = reactive({ show: false, anchorText: '', text: '', color: 'yellow', id: null });
+const noteEditorArea = ref(null);
 
 const paper = computed(() => papers.currentPaper);
 const title = computed(() => paper.value?.title || '未选择论文');
@@ -119,6 +161,8 @@ onMounted(async () => {
     outline.value = extractOutline();
     translations.value = await store.loadTranslations(id).catch(() => []);
     restoreTranslationBlocks();
+    annotations.value = await store.loadAnnotations(id).catch(() => []);
+    restoreAnnotations();
   }
   if (pdfFrame.value) {
     const url = await store.getPdfUrl(id).catch(() => null);
@@ -271,6 +315,165 @@ function restoreTranslationBlocks() {
       mdBox.value.appendChild(block);
     }
   });
+}
+
+// ---------- 高亮 ----------
+function getColorMark(colorId) {
+  return highlightColors.find((c) => c.id === colorId)?.mark || '#ffd54f';
+}
+
+function highlightSelection(colorId) {
+  ctxMenu.show = false;
+  const selectedText = ctxMenu.text;
+  if (!selectedText) return;
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  const id = 'hl_' + Date.now().toString(36);
+  const mark = document.createElement('mark');
+  mark.className = 'user-highlight';
+  mark.dataset.id = id;
+  mark.dataset.color = colorId;
+  mark.style.background = getColorMark(colorId);
+  mark.title = '点击删除高亮';
+  try {
+    range.surroundContents(mark);
+    const ann = { id, type: 'highlight', anchorText: selectedText, color: colorId, createdAt: Date.now() };
+    annotations.value.push(ann);
+    store.saveAnnotations(papers.currentId, annotations.value).catch(() => {});
+    mark.addEventListener('click', (e) => { e.stopPropagation(); removeHighlight(id); });
+  } catch { /* 跨节点选择 surroundContents 可能失败,忽略 */ }
+}
+
+function removeHighlight(id) {
+  const mark = mdBox.value?.querySelector(`mark.user-highlight[data-id="${id}"]`);
+  if (mark) {
+    const parent = mark.parentNode;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    parent.removeChild(mark);
+    parent.normalize();
+  }
+  annotations.value = annotations.value.filter((a) => a.id !== id);
+  store.saveAnnotations(papers.currentId, annotations.value).catch(() => {});
+}
+
+function restoreHighlights() {
+  if (!mdBox.value) return;
+  annotations.value.filter((a) => a.type === 'highlight').forEach((ann) => {
+    const walker = document.createTreeWalker(mdBox.value, NodeFilter.SHOW_TEXT, null);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const idx = node.textContent.indexOf(ann.anchorText);
+      if (idx >= 0) {
+        const range = document.createRange();
+        range.setStart(node, idx);
+        range.setEnd(node, idx + ann.anchorText.length);
+        const mark = document.createElement('mark');
+        mark.className = 'user-highlight';
+        mark.dataset.id = ann.id;
+        mark.dataset.color = ann.color;
+        mark.style.background = getColorMark(ann.color);
+        mark.title = '点击删除高亮';
+        try {
+          range.surroundContents(mark);
+          mark.addEventListener('click', (e) => { e.stopPropagation(); removeHighlight(ann.id); });
+        } catch { /* 跨节点失败忽略 */ }
+        break;
+      }
+    }
+  });
+}
+
+// ---------- 注解 ----------
+function addAnnotation() {
+  ctxMenu.show = false;
+  noteEditor.anchorText = ctxMenu.text;
+  noteEditor.text = '';
+  noteEditor.color = 'yellow';
+  noteEditor.id = null;
+  noteEditor.show = true;
+  nextTick(() => noteEditorArea.value?.focus());
+}
+
+function editAnnotation(id) {
+  const ann = annotations.value.find((a) => a.id === id);
+  if (!ann) return;
+  noteEditor.anchorText = ann.anchorText;
+  noteEditor.text = ann.note;
+  noteEditor.color = ann.color;
+  noteEditor.id = id;
+  noteEditor.show = true;
+  nextTick(() => noteEditorArea.value?.focus());
+}
+
+function confirmAnnotation() {
+  if (!noteEditor.text.trim()) {
+    noteEditor.show = false;
+    return;
+  }
+  if (noteEditor.id) {
+    const ann = annotations.value.find((a) => a.id === noteEditor.id);
+    if (ann) {
+      ann.note = noteEditor.text.trim();
+      ann.color = noteEditor.color;
+      const block = mdBox.value?.querySelector(`.annotation-block[data-id="${noteEditor.id}"]`);
+      if (block) {
+        block.dataset.color = noteEditor.color;
+        block.style.borderLeftColor = getColorMark(noteEditor.color);
+        block.querySelector('.annotation-body').textContent = ann.note;
+      }
+    }
+  } else {
+    const id = 'note_' + Date.now().toString(36);
+    const ann = { id, type: 'note', anchorText: noteEditor.anchorText, note: noteEditor.text.trim(), color: noteEditor.color, createdAt: Date.now() };
+    annotations.value.push(ann);
+    insertAnnotationBlock(ann);
+  }
+  store.saveAnnotations(papers.currentId, annotations.value).catch(() => {});
+  noteEditor.show = false;
+}
+
+function createAnnotationBlock(ann) {
+  const block = document.createElement('div');
+  block.className = 'annotation-block';
+  block.dataset.id = ann.id;
+  block.dataset.color = ann.color;
+  block.style.borderLeftColor = getColorMark(ann.color);
+  block.innerHTML = `
+    <div class="annotation-header">
+      <span class="annotation-label">📝 注解</span>
+      <button class="annotation-edit" title="编辑">✎</button>
+      <button class="annotation-remove" title="删除">✕</button>
+    </div>
+    <div class="annotation-body"></div>
+  `;
+  block.querySelector('.annotation-body').textContent = ann.note;
+  block.querySelector('.annotation-edit').addEventListener('click', () => editAnnotation(ann.id));
+  block.querySelector('.annotation-remove').addEventListener('click', () => removeAnnotation(ann.id));
+  return block;
+}
+
+function insertAnnotationBlock(ann) {
+  const anchor = findAnchorElement(ann.anchorText);
+  const block = createAnnotationBlock(ann);
+  if (anchor && anchor.parentElement) {
+    anchor.insertAdjacentElement('afterend', block);
+  } else if (mdBox.value) {
+    mdBox.value.appendChild(block);
+  }
+}
+
+function removeAnnotation(id) {
+  annotations.value = annotations.value.filter((a) => a.id !== id);
+  store.saveAnnotations(papers.currentId, annotations.value).catch(() => {});
+  const block = mdBox.value?.querySelector(`.annotation-block[data-id="${id}"]`);
+  if (block) block.remove();
+}
+
+function restoreAnnotations() {
+  if (!mdBox.value) return;
+  restoreHighlights();
+  annotations.value.filter((a) => a.type === 'note').forEach((ann) => insertAnnotationBlock(ann));
 }
 
 async function askAboutImage() {
@@ -498,4 +701,75 @@ function onNotesAskText(text) {
 .md-view :deep(.translation-body) { font-size: 14px; line-height: 1.7; color: var(--text); }
 .md-view :deep(.translation-body p) { margin: .3em 0; }
 .md-view :deep(.cursor) { animation: blink .7s step-end infinite; }
+
+.md-view :deep(mark.user-highlight) {
+  border-radius: 3px; padding: 1px 2px; cursor: pointer;
+  transition: opacity .15s;
+}
+.md-view :deep(mark.user-highlight:hover) { opacity: 0.7; }
+
+.md-view :deep(.annotation-block) {
+  margin: 10px 0; padding: 10px 14px;
+  background: #fffde7; border-left: 3px solid #ffd54f; border-radius: 0 8px 8px 0;
+}
+.md-view :deep(.annotation-header) {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+}
+.md-view :deep(.annotation-label) { font-size: 12px; color: var(--muted); font-weight: 600; }
+.md-view :deep(.annotation-edit),
+.md-view :deep(.annotation-remove) {
+  border: none; background: transparent; cursor: pointer; font-size: 14px;
+  padding: 2px 6px; border-radius: 4px; color: var(--muted); transition: .15s;
+}
+.md-view :deep(.annotation-edit) { margin-left: auto; }
+.md-view :deep(.annotation-edit:hover) { background: rgba(0,0,0,.06); }
+.md-view :deep(.annotation-remove:hover) { background: rgba(0,0,0,.06); color: var(--red); }
+.md-view :deep(.annotation-body) { font-size: 14px; line-height: 1.6; color: var(--text); white-space: pre-wrap; }
+
+.ctx-divider { height: 1px; background: var(--border); margin: 4px 0; }
+.ctx-submenu { padding: 6px 16px; }
+.ctx-submenu-label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 6px; }
+.color-picker { display: flex; gap: 8px; }
+.color-dot {
+  width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff;
+  cursor: pointer; transition: transform .15s; box-shadow: 0 0 0 1px var(--border);
+}
+.color-dot:hover { transform: scale(1.2); }
+
+.note-editor-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.5);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.note-editor-modal {
+  background: #fff; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.2);
+  max-width: 500px; width: 100%; padding: 20px 24px;
+}
+.note-editor-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; font-size: 16px; font-weight: 600;
+}
+.note-editor-header .close-btn {
+  border: none; background: transparent; font-size: 20px; cursor: pointer;
+  padding: 2px 8px; border-radius: 6px;
+}
+.note-editor-header .close-btn:hover { background: #f0f1f3; }
+.note-editor-anchor {
+  font-size: 13px; color: var(--muted); background: #f8f9fa;
+  padding: 8px 12px; border-radius: 6px; margin-bottom: 12px;
+  max-height: 80px; overflow-y: auto; line-height: 1.5;
+}
+.note-editor-modal textarea {
+  width: 100%; resize: vertical; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 14px; font-family: inherit; line-height: 1.6; outline: none;
+}
+.note-editor-modal textarea:focus { border-color: var(--primary); }
+.note-editor-footer {
+  display: flex; align-items: center; gap: 12px; margin-top: 12px;
+}
+.color-select-label { font-size: 13px; color: var(--muted); flex: 1; }
+.color-select-label select {
+  padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 13px;
+}
 </style>

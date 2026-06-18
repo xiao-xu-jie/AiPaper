@@ -221,8 +221,16 @@ function askAboutText() {
 }
 
 // ---------- 翻译 ----------
+// 按段落块匹配 textContent,兼容段落内有 mark/高亮等子标签的情况
 function findAnchorElement(selectedText) {
   if (!mdBox.value) return null;
+  const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'BLOCKQUOTE', 'PRE', 'DD', 'DT'];
+  for (const child of mdBox.value.children) {
+    if (blockTags.includes(child.tagName) && child.textContent.includes(selectedText)) {
+      return child;
+    }
+  }
+  // 兜底:文本节点级匹配(选中文字在单个文本节点内时)
   const walker = document.createTreeWalker(mdBox.value, NodeFilter.SHOW_TEXT, null);
   while (walker.nextNode()) {
     if (walker.currentNode.textContent.includes(selectedText)) {

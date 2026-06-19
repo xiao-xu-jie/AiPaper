@@ -265,6 +265,19 @@ export async function loadFolders() {
   } catch { return null; }
 }
 
+// ---------- 标签库 ----------
+export async function saveTags(data) {
+  assertRoot();
+  await writeFile(rootDir, '_tags.json', JSON.stringify(data, null, 2));
+}
+
+export async function loadTags() {
+  try {
+    const txt = await readFileText(rootDir, '_tags.json');
+    return txt ? JSON.parse(txt) : { tags: [] };
+  } catch { return { tags: [] }; }
+}
+
 // ---------- 翻译 ----------
 export async function saveTranslations(paperId, translations) {
   const dir = await getPaperDir(paperId, true);

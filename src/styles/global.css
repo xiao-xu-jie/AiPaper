@@ -58,3 +58,111 @@ body {
   overflow-x: auto;
   overflow-y: hidden;
 }
+
+/* 主要阅读/对话区域滚动条 */
+.md-view,
+.notes-preview,
+.notes-editor,
+.notes-generating,
+.chat-messages,
+.outline-nav,
+.tree-wrap,
+.library-filter-tags,
+.tag-manager-list,
+.ref-list,
+.sp-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(107, 114, 128, .42) transparent;
+  scrollbar-gutter: stable;
+}
+
+.md-view::-webkit-scrollbar,
+.notes-preview::-webkit-scrollbar,
+.notes-editor::-webkit-scrollbar,
+.notes-generating::-webkit-scrollbar,
+.chat-messages::-webkit-scrollbar,
+.outline-nav::-webkit-scrollbar,
+.tree-wrap::-webkit-scrollbar,
+.library-filter-tags::-webkit-scrollbar,
+.tag-manager-list::-webkit-scrollbar,
+.ref-list::-webkit-scrollbar,
+.sp-list::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.md-view::-webkit-scrollbar-track,
+.notes-preview::-webkit-scrollbar-track,
+.notes-editor::-webkit-scrollbar-track,
+.notes-generating::-webkit-scrollbar-track,
+.chat-messages::-webkit-scrollbar-track,
+.outline-nav::-webkit-scrollbar-track,
+.tree-wrap::-webkit-scrollbar-track,
+.library-filter-tags::-webkit-scrollbar-track,
+.tag-manager-list::-webkit-scrollbar-track,
+.ref-list::-webkit-scrollbar-track,
+.sp-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.md-view::-webkit-scrollbar-thumb,
+.notes-preview::-webkit-scrollbar-thumb,
+.notes-editor::-webkit-scrollbar-thumb,
+.notes-generating::-webkit-scrollbar-thumb,
+.chat-messages::-webkit-scrollbar-thumb,
+.outline-nav::-webkit-scrollbar-thumb,
+.tree-wrap::-webkit-scrollbar-thumb,
+.library-filter-tags::-webkit-scrollbar-thumb,
+.tag-manager-list::-webkit-scrollbar-thumb,
+.ref-list::-webkit-scrollbar-thumb,
+.sp-list::-webkit-scrollbar-thumb {
+  min-height: 44px;
+  border: 4px solid transparent;
+  border-radius: 999px;
+  background: rgba(107, 114, 128, .34);
+  background-clip: padding-box;
+}
+
+.md-view::-webkit-scrollbar-thumb:hover,
+.notes-preview::-webkit-scrollbar-thumb:hover,
+.notes-editor::-webkit-scrollbar-thumb:hover,
+.notes-generating::-webkit-scrollbar-thumb:hover,
+.chat-messages::-webkit-scrollbar-thumb:hover,
+.outline-nav::-webkit-scrollbar-thumb:hover,
+.tree-wrap::-webkit-scrollbar-thumb:hover,
+.library-filter-tags::-webkit-scrollbar-thumb:hover,
+.tag-manager-list::-webkit-scrollbar-thumb:hover,
+.ref-list::-webkit-scrollbar-thumb:hover,
+.sp-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 91, 219, .5);
+  background-clip: padding-box;
+}
+
+.md-view::-webkit-scrollbar-thumb:active,
+.notes-preview::-webkit-scrollbar-thumb:active,
+.notes-editor::-webkit-scrollbar-thumb:active,
+.notes-generating::-webkit-scrollbar-thumb:active,
+.chat-messages::-webkit-scrollbar-thumb:active,
+.outline-nav::-webkit-scrollbar-thumb:active,
+.tree-wrap::-webkit-scrollbar-thumb:active,
+.library-filter-tags::-webkit-scrollbar-thumb:active,
+.tag-manager-list::-webkit-scrollbar-thumb:active,
+.ref-list::-webkit-scrollbar-thumb:active,
+.sp-list::-webkit-scrollbar-thumb:active {
+  background: rgba(59, 91, 219, .68);
+  background-clip: padding-box;
+}
+
+.md-view::-webkit-scrollbar-corner,
+.notes-preview::-webkit-scrollbar-corner,
+.notes-editor::-webkit-scrollbar-corner,
+.notes-generating::-webkit-scrollbar-corner,
+.chat-messages::-webkit-scrollbar-corner,
+.outline-nav::-webkit-scrollbar-corner,
+.tree-wrap::-webkit-scrollbar-corner,
+.library-filter-tags::-webkit-scrollbar-corner,
+.tag-manager-list::-webkit-scrollbar-corner,
+.ref-list::-webkit-scrollbar-corner,
+.sp-list::-webkit-scrollbar-corner {
+  background: transparent;
+}

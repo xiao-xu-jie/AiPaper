@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import * as store from '../lib/store.js';
 import * as mineru from '../lib/mineru.js';
 import JSZip from 'jszip';
+import { normalizeTagNames } from './tags.js';
 
 function uid() {
   return 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -24,11 +25,17 @@ export const usePapersStore = defineStore('papers', {
     async refresh() {
       let list = [];
       try { list = await store.listPapers(); } catch { list = []; }
-      list = list.map((p) => ({ ...p, uploadedAt: p.uploadedAt || p.createdAt || null }));
+      list = list.map((p) => ({
+        ...p,
+        uploadedAt: p.uploadedAt || p.createdAt || null,
+        tags: normalizeTagNames(p.tags),
+      }));
       // 就地更新，保留响应式引用
       this.papers.splice(0, this.papers.length, ...list);
       const { useFoldersStore } = await import('./folders.js');
       await useFoldersStore().init(this.papers);
+      const { useTagsStore } = await import('./tags.js');
+      await useTagsStore().init(this.papers);
       if (!this.currentId && this.papers.length) await this.open(this.papers[0].id);
       this._resumeUnfinished();
     },
@@ -59,6 +66,7 @@ export const usePapersStore = defineStore('papers', {
         progress: 0,
         uploadedAt: Date.now(),
         createdAt: Date.now(),
+        tags: [],
       };
       this.papers.unshift(meta);
       this.currentId = paperId;
@@ -163,6 +171,38 @@ export const usePapersStore = defineStore('papers', {
     async updateRemark(paperId, remark) {
       const next = (remark || '').trim();
       this._patch(paperId, { remark: next || undefined });
+    },
+
+    async updateTags(paperId, tags) {
+      const next = normalizeTagNames(tags);
+      this._patch(paperId, { tags: next });
+      const { useTagsStore } = await import('./tags.js');
+      await useTagsStore().ensureTags(next);
+    },
+
+    async removeTagFromPaper(paperId, tagName) {
+      const key = String(tagName || '').trim().toLowerCase();
+      if (!key) return;
+      const paper = this.papers.find((p) => p.id === paperId);
+      if (!paper) return;
+      const next = normalizeTagNames(paper.tags).filter((tag) => tag.toLowerCase() !== key);
+      this._patch(paperId, { tags: next });
+    },
+
+    async removeTagsFromPapers(paperIds, tagNames) {
+      const ids = new Set(Array.isArray(paperIds) ? paperIds : []);
+      const keys = new Set(normalizeTagNames(tagNames, 64).map((tag) => tag.toLowerCase()));
+      if (!ids.size || !keys.size) return 0;
+      let changed = 0;
+      for (const paper of this.papers) {
+        if (!ids.has(paper.id)) continue;
+        const current = normalizeTagNames(paper.tags);
+        const next = current.filter((tag) => !keys.has(tag.toLowerCase()));
+        if (next.length === current.length) continue;
+        changed += 1;
+        this._patch(paper.id, { tags: next });
+      }
+      return changed;
     },
   },
 });

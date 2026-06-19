@@ -1,6 +1,5 @@
 <template>
   <div v-if="visible">
-    <!-- 目录行 -->
     <div
       class="folder-row"
       :class="{ active: folders.activeFolderId === nodeId }"
@@ -13,8 +12,7 @@
       <span class="folder-name">{{ node.name }}</span>
     </div>
 
-    <!-- 子节点 -->
-    <template v-if="expanded || searching">
+    <template v-if="expanded || filtering">
       <FolderNode
         v-for="childId in node.children"
         :key="childId"
@@ -22,7 +20,6 @@
         :depth="depth + 1"
       />
 
-      <!-- 论文列表 -->
       <div
         v-for="p in nodePapers"
         :key="p.id"
@@ -37,12 +34,32 @@
           <div class="pi-title" :title="displayTitle(p)">{{ displayTitle(p) }}</div>
           <div class="pi-sub">
             <span class="badge" :class="badgeClass(p)">{{ badgeLabel(p) }}</span>
-            <span class="pi-time">{{ formatUploadTime(p) }}</span>
+            <span class="pi-time">{{ formatTime(p) }}</span>
+          </div>
+          <div v-if="p.tags?.length" class="paper-tags">
+            <button
+              v-for="tag in visiblePaperTags(p)"
+              :key="tag"
+              class="paper-tag"
+              :class="{ active: isActiveTag(tag), removable: isActiveTag(tag) }"
+              :title="isActiveTag(tag) ? '从该论文移除标签' : tag"
+              @click.stop="onTagClick(p.id, tag)"
+            >
+              <span>{{ tag }}</span>
+              <span v-if="isActiveTag(tag)" class="tag-x">×</span>
+            </button>
+            <span v-if="p.tags.length > 3" class="tag-more">+{{ p.tags.length - 3 }}</span>
           </div>
         </div>
       </div>
 
-      <div v-if="!searching && !node.children.length && !nodePapers.length" class="empty-folder" :style="{ paddingLeft: (depth+1)*14 + 12 + 'px' }">空</div>
+      <div
+        v-if="!filtering && !node.children.length && !nodePapers.length"
+        class="empty-folder"
+        :style="{ paddingLeft: (depth + 1) * 14 + 12 + 'px' }"
+      >
+        空
+      </div>
     </template>
   </div>
 </template>
@@ -55,12 +72,16 @@ const props = defineProps({ nodeId: String, depth: { type: Number, default: 0 } 
 const openCtx = inject('openCtx');
 const papers = inject('papers');
 const folders = inject('folders');
+const tags = inject('tags');
 const paperSearchText = inject('paperSearchText');
+const paperMatchesFilters = inject('paperMatchesFilters');
+const injectedFormatUploadTime = inject('formatUploadTime', null);
 
 const node = computed(() => folders.tree[props.nodeId] || { children: [], papers: [] });
 const expanded = computed(() => !!folders.expanded[props.nodeId]);
 const searchQuery = computed(() => (paperSearchText?.value || '').trim().toLowerCase());
-const searching = computed(() => !!searchQuery.value);
+const activeTagKeys = computed(() => new Set((tags?.activeTagNames || []).map((tag) => tag.toLowerCase())));
+const filtering = computed(() => !!searchQuery.value || activeTagKeys.value.size > 0);
 
 function toggle() {
   folders.activeFolderId = props.nodeId;
@@ -71,12 +92,8 @@ function displayTitle(p) {
   return p.remark || p.title || p.fileName || '未命名论文';
 }
 
-function uploadTimeValue(p) {
-  return p.uploadedAt || p.createdAt || null;
-}
-
-function formatUploadTime(p) {
-  const ts = uploadTimeValue(p);
+function fallbackFormatUploadTime(p) {
+  const ts = p.uploadedAt || p.createdAt || null;
   if (!ts) return '上传时间未知';
   const d = new Date(ts);
   const y = d.getFullYear();
@@ -87,15 +104,12 @@ function formatUploadTime(p) {
   return `${y}-${m}-${day} ${h}:${min}`;
 }
 
+function formatTime(p) {
+  return injectedFormatUploadTime ? injectedFormatUploadTime(p) : fallbackFormatUploadTime(p);
+}
+
 function matchesPaper(p) {
-  const q = searchQuery.value;
-  if (!q) return true;
-  return [
-    p.title,
-    p.fileName,
-    p.remark,
-    formatUploadTime(p),
-  ].some((v) => String(v || '').toLowerCase().includes(q));
+  return paperMatchesFilters ? paperMatchesFilters(p) : true;
 }
 
 function folderHasMatch(folderId) {
@@ -108,7 +122,24 @@ function folderHasMatch(folderId) {
   return ownMatch || (folder.children || []).some(folderHasMatch);
 }
 
-const visible = computed(() => !searching.value || props.nodeId === 'root' || folderHasMatch(props.nodeId));
+function isActiveTag(tag) {
+  return activeTagKeys.value.has(String(tag).toLowerCase());
+}
+
+function visiblePaperTags(p) {
+  const list = p.tags || [];
+  if (!activeTagKeys.value.size) return list.slice(0, 3);
+  const active = list.filter(isActiveTag);
+  const rest = list.filter((tag) => !isActiveTag(tag));
+  return [...active, ...rest].slice(0, 3);
+}
+
+async function onTagClick(paperId, tag) {
+  if (isActiveTag(tag)) await papers.removeTagFromPaper(paperId, tag);
+  else tags.toggleFilterTag(tag);
+}
+
+const visible = computed(() => !filtering.value || props.nodeId === 'root' || folderHasMatch(props.nodeId));
 
 const nodePapers = computed(() => {
   const ids = node.value.papers || [];
@@ -116,9 +147,12 @@ const nodePapers = computed(() => {
 });
 
 const STATE_MAP = {
-  done: ['done', '已完成'], failed: ['failed', '失败'],
-  running: ['running', '解析中'], pending: ['running', '排队中'],
-  uploading: ['running', '上传中'], converting: ['running', '转换中'],
+  done: ['done', '已完成'],
+  failed: ['failed', '失败'],
+  running: ['running', '解析中'],
+  pending: ['running', '排队中'],
+  uploading: ['running', '上传中'],
+  converting: ['running', '转换中'],
 };
 const badgeClass = (p) => (STATE_MAP[p.state] || ['running'])[0];
 const badgeLabel = (p) => (p.stateText && p.state !== 'done' ? p.stateText : (STATE_MAP[p.state] || ['', p.state])[1]);
@@ -126,31 +160,133 @@ const badgeLabel = (p) => (p.stateText && p.state !== 'done' ? p.stateText : (ST
 
 <style scoped>
 .folder-row {
-  display: flex; align-items: center; gap: 5px;
-  padding: 7px 8px; cursor: pointer; user-select: none; transition: .1s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: .1s;
   border-bottom: 1px solid transparent;
 }
 .folder-row:hover { background: #f0f1f3; }
 .folder-row.active { background: #eef1ff; }
-.fold-icon { font-size: 10px; color: var(--muted); width: 12px; flex-shrink: 0; }
-.folder-icon { font-size: 14px; flex-shrink: 0; }
-.folder-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
+.fold-icon {
+  font-size: 10px;
+  color: var(--muted);
+  width: 12px;
+  flex-shrink: 0;
+}
+.folder-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.folder-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .paper-item {
-  display: flex; align-items: flex-start; gap: 6px;
-  padding: 7px 8px; cursor: pointer; transition: .1s;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 8px;
+  cursor: pointer;
+  transition: .1s;
   border-bottom: 1px solid var(--border);
 }
 .paper-item:hover { background: #f0f1f3; }
-.paper-item.active { background: #eef1ff; border-left: 3px solid var(--primary); }
-.paper-icon { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
-.pi-info { flex: 1; min-width: 0; }
-.pi-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pi-sub { margin-top: 3px; }
-.pi-time { display: inline-block; margin-left: 6px; font-size: 10px; color: var(--muted); }
-.badge { font-size: 10px; padding: 1px 6px; border-radius: 8px; }
+.paper-item.active {
+  background: #eef1ff;
+  border-left: 3px solid var(--primary);
+}
+.paper-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.pi-info {
+  flex: 1;
+  min-width: 0;
+}
+.pi-title {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pi-sub {
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.pi-time {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
 .badge.done { background: #e6f7ec; color: var(--green); }
 .badge.failed { background: #fce8e8; color: var(--red); }
 .badge.running { background: #fff2e0; color: var(--orange); }
-.empty-folder { font-size: 12px; color: var(--muted); padding: 6px 0; }
+.paper-tags {
+  margin-top: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.paper-tag {
+  border: 1px solid var(--border);
+  background: #f7f8fa;
+  color: var(--muted);
+  border-radius: 5px;
+  padding: 1px 5px;
+  max-width: 100%;
+  font-size: 10px;
+  line-height: 1.45;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.paper-tag:hover {
+  color: var(--primary);
+  border-color: #bcc5ff;
+}
+.paper-tag.active {
+  color: var(--primary);
+  background: #eef1ff;
+  border-color: #9aa8ff;
+}
+.paper-tag.removable:hover {
+  color: var(--red);
+  border-color: #f0b5b5;
+  background: #fff2f2;
+}
+.tag-x {
+  color: inherit;
+  font-size: 11px;
+}
+.tag-more {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+.empty-folder {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 6px 0;
+}
 </style>

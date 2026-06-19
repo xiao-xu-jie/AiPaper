@@ -7,6 +7,7 @@
     </div>
     <button class="btn secondary" @click="showMinerUConfig = true">⚙️ MinerU</button>
     <button class="btn secondary" @click="showAIConfig = true">🤖 AI 模型</button>
+    <button class="btn secondary" @click="showTagManager = true">🏷 标签管理</button>
     <button class="btn secondary" @click="showHelp = true">❓ 帮助</button>
     <button v-if="isElectron" class="btn secondary" @click="handleCheckUpdate">🔄 检查更新</button>
     <button v-if="!isElectron" class="btn secondary" @click="goToDownload">📥 下载客户端</button>
@@ -17,6 +18,59 @@
   <AIConfigDialog v-model="showAIConfig" />
 
   <Teleport to="body">
+    <div v-if="showTagManager" class="tag-manager-overlay" @click="showTagManager = false">
+      <div class="tag-manager-modal" @click.stop>
+        <div class="tag-manager-header">
+          <div>
+            <h2>标签管理</h2>
+            <p>{{ tagStore.tags.length }} 个标签</p>
+          </div>
+          <button class="close-btn" @click="showTagManager = false">✕</button>
+        </div>
+
+        <div class="tag-manager-tools">
+          <input
+            v-model="tagSearch"
+            class="tag-manager-search"
+            placeholder="搜索标签"
+            spellcheck="false"
+          />
+          <div class="tag-manager-add">
+            <input
+              v-model="tagDraft"
+              class="tag-manager-input"
+              placeholder="新增标签"
+              @keydown.enter.prevent="addManagedTag"
+            />
+            <button class="btn small primary" @click="addManagedTag">添加</button>
+          </div>
+        </div>
+
+        <div class="tag-manager-list">
+          <div v-for="tag in managedTags" :key="tag.id" class="tag-manager-row">
+            <div class="tag-manager-info">
+              <span class="tag-manager-name">{{ tag.name }}</span>
+              <span class="tag-manager-count">使用 {{ tagUsage(tag.name) }} 篇</span>
+            </div>
+            <div class="tag-manager-actions">
+              <button class="btn small" @click="toggleManagedFilter(tag.name)">
+                {{ isTagActive(tag.name) ? '取消筛选' : '筛选' }}
+              </button>
+              <button
+                class="btn small danger-lite"
+                :disabled="tagUsage(tag.name) > 0"
+                :title="tagUsage(tag.name) > 0 ? '请先从论文中移除该标签' : '删除标签'"
+                @click="deleteManagedTag(tag.name)"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+          <div v-if="!managedTags.length" class="tag-manager-empty">暂无标签</div>
+        </div>
+      </div>
+    </div>
+
     <div v-if="showHelp" class="help-overlay" @click="showHelp = false">
       <div class="help-modal" @click.stop>
         <div class="help-header">
@@ -99,14 +153,20 @@
 </template>
 
 <script setup>
-import { ref, onMounted, inject } from 'vue';
+import { ref, computed, onMounted, inject } from 'vue';
 import MinerUConfigDialog from './MinerUConfigDialog.vue';
 import AIConfigDialog from './AIConfigDialog.vue';
+import { usePapersStore } from '../stores/papers.js';
+import { useTagsStore, normalizeTagName } from '../stores/tags.js';
+import * as store from '../lib/store.js';
 defineEmits(['upload', 'pickDir']);
 
 const showHelp = ref(false);
 const showMinerUConfig = ref(false);
 const showAIConfig = ref(false);
+const showTagManager = ref(false);
+const tagSearch = ref('');
+const tagDraft = ref('');
 const isElectron = ref(false);
 const updateAvailable = ref(false);
 const currentVersion = ref('2.1.0');
@@ -114,6 +174,55 @@ const latestVersion = ref('');
 const downloadUrl = ref('');
 const changelog = ref('');
 const toast = inject('toast');
+const papers = usePapersStore();
+const tagStore = useTagsStore();
+const managedTags = computed(() => {
+  const q = tagSearch.value.trim().toLowerCase();
+  return [...tagStore.tags]
+    .filter((tag) => !q || tag.name.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const usageDiff = tagUsage(b.name) - tagUsage(a.name);
+      if (usageDiff) return usageDiff;
+      return a.name.localeCompare(b.name, 'zh-Hans-CN');
+    });
+});
+
+function tagUsage(name) {
+  return tagStore.usageCount(name, papers.papers);
+}
+
+function isTagActive(name) {
+  return tagStore.activeTagNames.some((tag) => tag.toLowerCase() === name.toLowerCase());
+}
+
+function ensureTagStorageReady() {
+  if (store.getRoot()) return true;
+  toast?.('请先选择数据文件夹', 'error');
+  return false;
+}
+
+async function addManagedTag() {
+  if (!ensureTagStorageReady()) return;
+  const name = normalizeTagName(tagDraft.value);
+  if (!name) return;
+  await tagStore.ensureTags([name]);
+  tagDraft.value = '';
+  toast?.('标签已添加', 'success');
+}
+
+async function deleteManagedTag(name) {
+  if (!ensureTagStorageReady()) return;
+  const result = await tagStore.deleteLibraryTag(name, papers.papers);
+  if (result.ok) {
+    toast?.('标签已删除', 'success');
+  } else {
+    toast?.(`该标签仍被 ${result.count} 篇论文使用，请先从论文中移除`, 'error');
+  }
+}
+
+function toggleManagedFilter(name) {
+  tagStore.toggleFilterTag(name);
+}
 
 onMounted(() => {
   // 检测是否为 Electron 环境
@@ -202,6 +311,92 @@ function goToDownload() {
 .subtitle { font-size: 13px; font-weight: 400; color: var(--muted); }
 .topbar .btn { margin-left: 8px; }
 .topbar .btn.primary { margin-left: auto; }
+.tag-manager-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.tag-manager-modal {
+  background: #fff; border-radius: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: min(620px, 100%); max-height: 82vh;
+  display: flex; flex-direction: column;
+}
+.tag-manager-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px; border-bottom: 1px solid var(--border);
+}
+.tag-manager-header h2 { margin: 0; font-size: 18px; }
+.tag-manager-header p { margin-top: 4px; color: var(--muted); font-size: 12px; }
+.tag-manager-tools {
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(220px, 1.2fr);
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.tag-manager-search,
+.tag-manager-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  outline: none;
+  font-size: 13px;
+}
+.tag-manager-search:focus,
+.tag-manager-input:focus { border-color: var(--primary); }
+.tag-manager-add {
+  display: flex;
+  gap: 8px;
+}
+.tag-manager-list {
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.tag-manager-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 18px;
+}
+.tag-manager-row:hover { background: #f6f7f9; }
+.tag-manager-info {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tag-manager-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tag-manager-count {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.tag-manager-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.danger-lite {
+  color: var(--red);
+}
+.danger-lite:disabled {
+  color: var(--muted);
+}
+.tag-manager-empty {
+  padding: 34px 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
 .help-overlay {
   position: fixed; inset: 0; z-index: 1000;
   background: rgba(0, 0, 0, 0.5);

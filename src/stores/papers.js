@@ -24,6 +24,7 @@ export const usePapersStore = defineStore('papers', {
     async refresh() {
       let list = [];
       try { list = await store.listPapers(); } catch { list = []; }
+      list = list.map((p) => ({ ...p, uploadedAt: p.uploadedAt || p.createdAt || null }));
       // 就地更新，保留响应式引用
       this.papers.splice(0, this.papers.length, ...list);
       const { useFoldersStore } = await import('./folders.js');
@@ -56,6 +57,7 @@ export const usePapersStore = defineStore('papers', {
         language: cfg.lang,
         state: 'uploading',
         progress: 0,
+        uploadedAt: Date.now(),
         createdAt: Date.now(),
       };
       this.papers.unshift(meta);
@@ -156,6 +158,11 @@ export const usePapersStore = defineStore('papers', {
       await useFoldersStore().removePaper(paperId);
       if (this.currentId === paperId) { this.currentId = null; this.currentMd = null; }
       await this.refresh();
+    },
+
+    async updateRemark(paperId, remark) {
+      const next = (remark || '').trim();
+      this._patch(paperId, { remark: next || undefined });
     },
   },
 });

@@ -1,6 +1,7 @@
 <template>
-  <div class="resizer" :class="{ dragging }" @mousedown="startDrag" />
-  <aside class="chat-panel" :style="{ width: width + 'px' }">
+  <div ref="panelEl" class="chat-shell" :style="{ width: width + 'px' }">
+  <div ref="resizerEl" class="resizer" @mousedown="startDrag" />
+  <aside class="chat-panel">
     <div class="chat-head">
       <button class="btn small" title="切换会话" @click="chat.openPicker()">☰</button>
       <span v-if="!editingTitle" class="chat-title" @dblclick="startEdit">{{ chat.session?.title }}</span>
@@ -21,7 +22,7 @@
         </div>
       </template>
       <div v-if="chat.busy" class="chat-msg assistant">
-        <div class="chat-bubble assistant" v-html="streamingReply ? parseMarkdown(streamingReply) + '<span class=\'cursor\'>▌</span>' : '<span class=\'cursor\'>▌</span>'" />
+        <div class="chat-bubble assistant" v-html="streamingHtml" />
       </div>
     </div>
 
@@ -32,6 +33,13 @@
           <button @click="pendingImages.splice(i, 1)">✕</button>
         </div>
       </div>
+      <div v-if="selectedRefPapers.length" class="ref-strip">
+        <span class="ref-count">引用 {{ selectedRefPapers.length }}/3</span>
+        <button v-for="p in selectedRefPapers" :key="p.id" class="ref-chip" :title="paperTitle(p)" @click="toggleRefPaper(p.id)">
+          {{ paperTitle(p) }} ×
+        </button>
+        <button class="ref-clear" @click="selectedRefIds = []">清除</button>
+      </div>
       <textarea
         ref="inputEl"
         v-model="inputMsg"
@@ -41,52 +49,207 @@
         @paste="onPaste"
       />
       <div class="chat-input-bar">
+        <button
+          class="ref-tool-btn"
+          type="button"
+          :class="{ active: selectedRefPapers.length }"
+          :title="selectedRefPapers.length ? `已引用 ${selectedRefPapers.length} 篇论文` : '选择引用论文'"
+          @click="showRefPicker = true"
+        >
+          <span class="ref-tool-icon">↗</span>
+          <span>引用</span>
+          <span v-if="selectedRefPapers.length" class="ref-tool-count">{{ selectedRefPapers.length }}</span>
+        </button>
         <ModelSwitcher />
         <button class="btn primary" :disabled="chat.busy" @click="send">发送</button>
       </div>
     </div>
   </aside>
+  </div>
 
   <Teleport to="body">
     <div v-if="previewSrc" class="img-preview-overlay" @click="previewSrc = null">
       <img :src="previewSrc" @click.stop />
     </div>
   </Teleport>
+
+  <Teleport to="body">
+    <div v-if="showRefPicker" class="ref-picker-backdrop" @click="showRefPicker = false">
+      <div class="ref-picker" @click.stop>
+        <div class="ref-picker-head">
+          <span>选择引用论文</span>
+          <button class="close-btn" @click="showRefPicker = false">×</button>
+        </div>
+        <input v-model="refSearch" class="ref-search" placeholder="搜索题目、备注或文件名" />
+        <div class="ref-help">最多引用 3 篇已解析论文。发送时会和当前论文一起作为上下文。</div>
+        <div class="ref-list">
+          <button
+            v-for="p in filteredRefPapers"
+            :key="p.id"
+            class="ref-row"
+            :class="{ selected: selectedRefIds.includes(p.id), disabled: p.state !== 'done' }"
+            :disabled="p.state !== 'done' || (!selectedRefIds.includes(p.id) && selectedRefIds.length >= MAX_REF_PAPERS)"
+            @click="toggleRefPaper(p.id)"
+          >
+            <span class="ref-mark">{{ selectedRefIds.includes(p.id) ? '✓' : '' }}</span>
+            <span class="ref-main">
+              <span class="ref-title">{{ paperTitle(p) }}</span>
+              <span class="ref-meta">{{ p.state === 'done' ? '已解析' : (p.stateText || p.state || '未解析') }}</span>
+            </span>
+          </button>
+        </div>
+        <div class="ref-picker-actions">
+          <button class="btn small" @click="selectedRefIds = []">清除</button>
+          <button class="btn small primary" @click="showRefPicker = false">完成</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue';
+import { ref, watch, nextTick, shallowRef, onMounted, onUnmounted, computed } from 'vue';
 import { useChatStore } from '../stores/chat.js';
-import { parseMarkdown } from '../lib/render.js';
+import { usePapersStore } from '../stores/papers.js';
+import { parseMarkdown, parseMarkdownWithMath } from '../lib/render.js';
+import * as store from '../lib/store.js';
 import ModelSwitcher from './ModelSwitcher.vue';
 
 const emit = defineEmits(['close']);
 const chat = useChatStore();
+const papers = usePapersStore();
 
-const width = ref(340);
-const dragging = ref(false);
+const MIN_WIDTH = 200;
+const DEFAULT_WIDTH = 340;
+const MAX_REF_PAPERS = 3;
+
+const width = ref(DEFAULT_WIDTH);
 const inputMsg = ref('');
 const pendingImages = ref([]);
 const streamingReply = ref('');
+const streamingHtml = shallowRef('<span class="cursor">▌</span>');
 const msgBox = ref(null);
+const panelEl = ref(null);
+const resizerEl = ref(null);
 const inputEl = ref(null);
 const editingTitle = ref(false);
 const titleDraft = ref('');
 const titleInput = ref(null);
 const previewSrc = ref(null);
+const showRefPicker = ref(false);
+const refSearch = ref('');
+const selectedRefIds = ref([]);
+const bubbleCache = new WeakMap();
+let layoutBusyTimer = 0;
+let layoutFrame = 0;
+
+function maxPanelWidth() {
+  return Math.max(MIN_WIDTH, Math.min(window.innerWidth * 0.7, 900));
+}
+
+function clampPanelWidth(value) {
+  return Math.min(Math.max(MIN_WIDTH, value), maxPanelWidth());
+}
+
+function setOverlayWidth(value) {
+  document.documentElement.style.setProperty('--chat-overlay-width', `${Math.ceil(clampPanelWidth(value))}px`);
+}
+
+function setLayoutBusy(active) {
+  clearTimeout(layoutBusyTimer);
+  layoutBusyTimer = 0;
+  document.documentElement.classList.toggle('chat-layout-busy', active);
+}
+
+function scheduleOverlayWidth(value) {
+  const nextValue = clampPanelWidth(value);
+  setLayoutBusy(true);
+  if (layoutFrame) cancelAnimationFrame(layoutFrame);
+  layoutFrame = requestAnimationFrame(() => {
+    layoutFrame = requestAnimationFrame(() => {
+      layoutFrame = 0;
+      setOverlayWidth(nextValue);
+      layoutBusyTimer = window.setTimeout(() => setLayoutBusy(false), 180);
+    });
+  });
+}
 
 function onMsgClick(e) {
   if (e.target.tagName === 'IMG') previewSrc.value = e.target.src;
 }
 
+function paperTitle(p) {
+  return p?.remark || p?.title || p?.fileName || '未命名论文';
+}
+
+const selectedRefPapers = computed(() => selectedRefIds.value
+  .map((id) => papers.papers.find((p) => p.id === id))
+  .filter(Boolean));
+
+const filteredRefPapers = computed(() => {
+  const query = refSearch.value.trim().toLowerCase();
+  return papers.papers
+    .filter((p) => p.id !== papers.currentId)
+    .filter((p) => {
+      if (!query) return true;
+      return [paperTitle(p), p.title, p.fileName, p.remark]
+        .some((v) => String(v || '').toLowerCase().includes(query));
+    });
+});
+
+function toggleRefPaper(id) {
+  const paper = papers.papers.find((p) => p.id === id);
+  if (!paper || paper.state !== 'done') return;
+  if (selectedRefIds.value.includes(id)) {
+    selectedRefIds.value = selectedRefIds.value.filter((pid) => pid !== id);
+    return;
+  }
+  if (selectedRefIds.value.length >= MAX_REF_PAPERS) return;
+  selectedRefIds.value = [...selectedRefIds.value, id];
+}
+
+async function loadReferenceContexts() {
+  const contexts = [];
+  for (const p of selectedRefPapers.value.slice(0, MAX_REF_PAPERS)) {
+    const md = await store.loadMarkdown(p.id).catch(() => null);
+    if (md) contexts.push({ id: p.id, title: paperTitle(p), md });
+  }
+  return contexts;
+}
+
 function startDrag(e) {
   e.preventDefault();
-  const startX = e.clientX, startW = width.value;
-  dragging.value = true;
-  const onMove = (ev) => { width.value = Math.max(200, startW - (ev.clientX - startX)); };
-  const onUp = () => { dragging.value = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+  const panel = panelEl.value;
+  const resizer = resizerEl.value;
+  if (!panel) return;
+  const panelRect = panel.getBoundingClientRect();
+  const startX = e.clientX;
+  const startW = clampPanelWidth(panelRect.width || width.value);
+  let frame = 0;
+  let nextWidth = startW;
+  setLayoutBusy(true);
+  resizer?.classList.add('dragging');
+  const flushWidth = () => {
+    frame = 0;
+    panel.style.width = `${nextWidth}px`;
+  };
+  const onMove = (ev) => {
+    nextWidth = clampPanelWidth(startW - (ev.clientX - startX));
+    if (!frame) frame = requestAnimationFrame(flushWidth);
+  };
+  const onUp = () => {
+    if (frame) cancelAnimationFrame(frame);
+    resizer?.classList.remove('dragging');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('mouseleave', onUp);
+    width.value = nextWidth;
+    panel.style.width = `${nextWidth}px`;
+    scheduleOverlayWidth(nextWidth);
+  };
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
+  document.addEventListener('mouseleave', onUp);
 }
 
 function startEdit() {
@@ -121,7 +284,13 @@ function copy(msg, fmt) {
 
 function renderBubble(msg) {
   const text = getMsgText(msg);
-  if (msg.role === 'assistant') return parseMarkdown(text);
+  if (msg.role === 'assistant') {
+    const cached = bubbleCache.get(msg);
+    if (cached?.text === text) return cached.html;
+    const html = parseMarkdownWithMath(text);
+    bubbleCache.set(msg, { text, html });
+    return html;
+  }
   let html = escHtml(text);
   if (Array.isArray(msg.content)) {
     msg.content.filter((c) => c.type === 'image_url').forEach((c) => {
@@ -143,16 +312,20 @@ async function send() {
   inputMsg.value = '';
   pendingImages.value = [];
   streamingReply.value = ' '; // 立刻显示光标占位
+  streamingHtml.value = '<span class="cursor">▌</span>';
 
   try {
+    const extraContexts = await loadReferenceContexts();
     await chat.send(msg, images, (chunk) => {
       streamingReply.value = (streamingReply.value.trim() ? streamingReply.value : '') + chunk;
+      streamingHtml.value = parseMarkdownWithMath(streamingReply.value) + '<span class="cursor">▌</span>';
       nextTick(() => { if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight; });
-    });
+    }, { extraContexts });
   } catch (e) {
     chat.session?.messages.push({ role: 'assistant', content: `[错误] ${e.message}` });
   } finally {
     streamingReply.value = '';
+    streamingHtml.value = '<span class="cursor">▌</span>';
     nextTick(() => { if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight; });
   }
 }
@@ -172,6 +345,30 @@ watch(() => chat.session?.messages?.length, () => {
   nextTick(() => { if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight; });
 });
 
+watch(() => papers.currentId, () => {
+  selectedRefIds.value = selectedRefIds.value.filter((id) => id !== papers.currentId);
+});
+
+function syncPanelBounds() {
+  const nextWidth = clampPanelWidth(width.value);
+  width.value = nextWidth;
+  if (panelEl.value) panelEl.value.style.width = `${nextWidth}px`;
+  setOverlayWidth(nextWidth);
+}
+
+onMounted(() => {
+  syncPanelBounds();
+  window.addEventListener('resize', syncPanelBounds);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', syncPanelBounds);
+  if (layoutFrame) cancelAnimationFrame(layoutFrame);
+  clearTimeout(layoutBusyTimer);
+  document.documentElement.classList.remove('chat-layout-busy');
+  document.documentElement.style.removeProperty('--chat-overlay-width');
+});
+
 defineExpose({
   addPendingImage(dataUrl) {
     pendingImages.value.push(dataUrl);
@@ -184,15 +381,90 @@ defineExpose({
 </script>
 
 <style scoped>
-.resizer { width: 5px; flex-shrink: 0; background: var(--border); cursor: col-resize; transition: background .15s; }
+.chat-shell {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 80;
+  display: flex;
+  min-width: 200px;
+  max-width: min(70vw, 900px);
+  box-shadow: -4px 0 16px rgba(0,0,0,.08);
+}
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  z-index: 2;
+  background: var(--border);
+  cursor: col-resize;
+  transition: background .15s;
+}
 .resizer:hover, .resizer.dragging { background: var(--primary); }
-.chat-panel { display: flex; flex-direction: column; background: var(--panel); overflow: hidden; flex-shrink: 0; min-width: 200px; }
+.chat-panel { display: flex; flex-direction: column; background: var(--panel); overflow: hidden; width: 100%; min-width: 200px; }
 .chat-head { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px; }
 .chat-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; font-size: 13px; }
 .chat-title:hover { color: var(--primary); }
 .chat-title-input { flex: 1; border: 1px solid var(--primary); border-radius: 5px; padding: 2px 6px; font-size: 13px; outline: none; }
-.chat-input-bar { display: flex; align-items: center; gap: 8px; }
-.chat-input-bar .btn { margin-left: auto; }
+.chat-input-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.ref-tool-btn {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  background: #f7f8fa;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0 9px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .15s, background .15s, color .15s, box-shadow .15s;
+}
+.ref-tool-btn:hover {
+  border-color: #b8c2d2;
+  background: #fff;
+}
+.ref-tool-btn.active {
+  color: var(--primary);
+  border-color: #c6d1ff;
+  background: #eef1ff;
+}
+.ref-tool-icon {
+  font-size: 13px;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+.ref-tool-count {
+  min-width: 17px;
+  height: 17px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+}
+.chat-input-bar :deep(.model-switcher) { min-width: 0; }
+.chat-input-bar .btn.primary {
+  height: 30px;
+  align-self: stretch;
+  padding: 0 13px;
+  border-radius: 8px;
+  font-size: 13px;
+}
 .chat-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .chat-msg { display: flex; flex-direction: column; gap: 4px; max-width: 92%; }
 .chat-msg.user { align-self: flex-end; align-items: flex-end; }
@@ -215,6 +487,23 @@ defineExpose({
 .chat-bubble.assistant :deep(ul), .chat-bubble.assistant :deep(ol) { padding-left: 18px; margin: .4em 0; }
 .chat-bubble.assistant :deep(h1), .chat-bubble.assistant :deep(h2), .chat-bubble.assistant :deep(h3) { margin: .5em 0 .3em; font-size: 1em; font-weight: 600; }
 .chat-input-wrap { padding: 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.ref-strip { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ref-count { font-size: 11px; color: var(--muted); }
+.ref-chip, .ref-clear {
+  border: 1px solid var(--border);
+  background: #f6f7f9;
+  color: var(--text);
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ref-chip:hover, .ref-clear:hover { background: #eef0f2; }
+.ref-clear { color: var(--muted); }
 textarea { width: 100%; resize: none; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; line-height: 1.5; outline: none; }
 textarea:focus { border-color: var(--primary); }
 .chat-input-wrap .btn { align-self: flex-end; }
@@ -229,6 +518,86 @@ textarea:focus { border-color: var(--primary); }
   z-index: 1000; cursor: zoom-out;
 }
 .img-preview-overlay img { max-width: 90vw; max-height: 90vh; border-radius: 8px; cursor: default; }
+.ref-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0,0,0,.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.ref-picker {
+  width: min(520px, 92vw);
+  max-height: min(620px, 86vh);
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0,0,0,.22);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ref-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 14px;
+}
+.close-btn { border: none; background: transparent; cursor: pointer; font-size: 20px; line-height: 1; color: var(--muted); }
+.close-btn:hover { color: var(--text); }
+.ref-search {
+  margin: 12px 14px 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  outline: none;
+  font-size: 13px;
+}
+.ref-search:focus { border-color: var(--primary); }
+.ref-help { padding: 0 14px 8px; font-size: 12px; color: var(--muted); line-height: 1.4; }
+.ref-list { overflow-y: auto; padding: 4px 8px 10px; }
+.ref-row {
+  width: 100%;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  text-align: left;
+}
+.ref-row:hover { background: #f0f1f3; }
+.ref-row.selected { background: #eef1ff; }
+.ref-row.disabled { opacity: .55; cursor: not-allowed; }
+.ref-mark {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.ref-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ref-title { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ref-meta { font-size: 11px; color: var(--muted); }
+.ref-picker-actions {
+  border-top: 1px solid var(--border);
+  padding: 10px 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .cursor { animation: blink .7s step-end infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 </style>

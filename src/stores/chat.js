@@ -64,7 +64,7 @@ export const useChatStore = defineStore('chat', {
       this._persist();
     },
 
-    async send(userMsg, images, onChunk) {
+    async send(userMsg, images, onChunk, options = {}) {
       if (this.busy || !this.session) return;
       this.busy = true;
 
@@ -76,7 +76,7 @@ export const useChatStore = defineStore('chat', {
       let reply = '';
       try {
         const history = this.session.messages.slice(0, -1);
-        reply = await agent.chat(history, userMsg, images, onChunk);
+        reply = await agent.chat(history, userMsg, images, onChunk, options);
         this.session.messages.push({ role: 'assistant', content: reply });
         this._persist();
       } catch (e) {

@@ -4,6 +4,14 @@
       <span>论文库</span>
       <button class="btn-icon" title="新建目录" @click="createFolder('root')">＋</button>
     </div>
+    <div class="search-wrap">
+      <input
+        v-model="searchText"
+        class="paper-search"
+        placeholder="搜索题目、备注或上传时间"
+        spellcheck="false"
+      />
+    </div>
     <div class="tree-wrap">
       <FolderNode node-id="root" :depth="0" />
     </div>
@@ -19,6 +27,29 @@
         <div class="fd-actions">
           <button class="btn small" @click="cancelDialog">取消</button>
           <button class="btn small primary" @click="commitDialog">确认</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- 备注弹窗 -->
+  <Teleport to="body">
+    <div v-if="remarkTarget" class="folder-dialog-backdrop" @click="cancelRemark">
+      <div class="folder-dialog" @click.stop>
+        <div class="fd-title">论文备注</div>
+        <div class="fd-hint">{{ currentRemarkPaper?.title }}</div>
+        <input
+          ref="remarkInput"
+          v-model="remarkDraft"
+          class="fd-input"
+          placeholder="输入备注，留空则显示原题名"
+          @keydown.enter="commitRemark"
+          @keydown.esc="cancelRemark"
+        />
+        <div class="fd-actions">
+          <button class="btn small" @click="cancelRemark">取消</button>
+          <button v-if="currentRemarkPaper?.remark" class="btn small" @click="clearRemark">删除备注</button>
+          <button class="btn small primary" @click="commitRemark">确认</button>
         </div>
       </div>
     </div>
@@ -44,6 +75,8 @@
       <button v-if="ctx.type === 'folder' && ctx.id !== 'root'" @click="startRename(ctx.id)">重命名</button>
       <button v-if="ctx.type === 'folder' && ctx.id !== 'root'" class="danger" @click="delFolder(ctx.id)">删除目录</button>
       <template v-if="ctx.type === 'paper'">
+        <button @click="startRemark(ctx.id)">{{ paperById(ctx.id)?.remark ? '编辑备注' : '添加备注' }}</button>
+        <button v-if="paperById(ctx.id)?.remark" @click="removeRemark(ctx.id)">删除备注</button>
         <button @click="showMoveMenu = true">移动到目录</button>
         <button class="danger" @click="delPaper(ctx.id)">删除论文</button>
       </template>
@@ -68,6 +101,7 @@ const folders = useFoldersStore();
 const toast = inject('toast', () => {});
 const width = ref(280);
 const dragging = ref(false);
+const searchText = ref('');
 
 // 右键菜单
 const ctx = ref({ show: false, x: 0, y: 0, id: '', type: '' });
@@ -78,8 +112,16 @@ const renameTarget = ref(null);
 const createTarget = ref(null);
 const renameDraft = ref('');
 const renameInput = ref(null);
+const remarkTarget = ref(null);
+const remarkDraft = ref('');
+const remarkInput = ref(null);
 
 const allFolders = computed(() => Object.values(folders.tree));
+const currentRemarkPaper = computed(() => paperById(remarkTarget.value));
+
+function paperById(id) {
+  return papers.papers.find((p) => p.id === id) || null;
+}
 
 function startDrag(e) {
   e.preventDefault();
@@ -97,6 +139,7 @@ function openCtx(e, id, type) {
 }
 
 function cancelDialog() { renameTarget.value = null; createTarget.value = null; }
+function cancelRemark() { remarkTarget.value = null; remarkDraft.value = ''; }
 
 async function commitDialog() {
   const name = renameDraft.value.trim();
@@ -144,10 +187,36 @@ async function movePaper(paperId, folderId) {
   await folders.movePaper(paperId, folderId);
 }
 
+function startRemark(id) {
+  ctx.value.show = false;
+  const paper = paperById(id);
+  remarkTarget.value = id;
+  remarkDraft.value = paper?.remark || '';
+  nextTick(() => remarkInput.value?.focus());
+}
+
+async function commitRemark() {
+  if (!remarkTarget.value) return;
+  await papers.updateRemark(remarkTarget.value, remarkDraft.value);
+  cancelRemark();
+}
+
+async function clearRemark() {
+  if (!remarkTarget.value) return;
+  await papers.updateRemark(remarkTarget.value, '');
+  cancelRemark();
+}
+
+async function removeRemark(id) {
+  ctx.value.show = false;
+  await papers.updateRemark(id, '');
+}
+
 // 提供给子组件 FolderNode 的上下文
 provide('openCtx', openCtx);
 provide('papers', papers);
 provide('folders', folders);
+provide('paperSearchText', searchText);
 </script>
 
 <style scoped>
@@ -161,6 +230,16 @@ provide('folders', folders);
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
 }
+.search-wrap { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.paper-search {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 9px;
+  outline: none;
+  font-size: 13px;
+}
+.paper-search:focus { border-color: var(--primary); }
 .btn-icon { border: none; background: transparent; cursor: pointer; font-size: 18px; color: var(--muted); padding: 0 4px; line-height: 1; }
 .btn-icon:hover { color: var(--primary); }
 .tree-wrap { flex: 1; overflow-y: auto; }
@@ -186,6 +265,7 @@ provide('folders', folders);
 .folder-dialog-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 600; }
 .folder-dialog { background: #fff; border-radius: 10px; padding: 20px; width: 300px; display: flex; flex-direction: column; gap: 12px; }
 .fd-title { font-weight: 600; font-size: 15px; }
+.fd-hint { font-size: 12px; color: var(--muted); line-height: 1.4; max-height: 44px; overflow: hidden; }
 .fd-input { border: 1px solid var(--border); border-radius: 7px; padding: 8px 12px; font-size: 14px; outline: none; }
 .fd-input:focus { border-color: var(--primary); }
 .fd-actions { display: flex; gap: 8px; justify-content: flex-end; }

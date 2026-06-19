@@ -11,6 +11,21 @@ export function setContext(md) {
   paperMd = md || '';
 }
 
+function buildSystemContent(extraContexts = []) {
+  const validExtra = extraContexts.filter((ctx) => ctx?.md);
+  if (!paperMd && !validExtra.length) return '你是一个学术助手，请帮助用户理解和分析论文内容。';
+
+  const sections = [];
+  if (paperMd) {
+    sections.push(`【当前论文】\n${paperMd}`);
+  }
+  validExtra.forEach((ctx, idx) => {
+    sections.push(`【引用论文 ${idx + 1}：${ctx.title || '未命名论文'}】\n${ctx.md}`);
+  });
+
+  return `你是一个论文阅读助手。以下是用户提供的论文内容（Markdown 格式）。回答时请优先基于当前论文；当用户问题涉及对比、引用或补充时，可以使用引用论文，并明确指出信息来自当前论文还是哪篇引用论文。\n\n${sections.join('\n\n---\n\n')}`;
+}
+
 function getProxyUrl(targetUrl) {
   if (typeof window === 'undefined') return targetUrl;
   if (window.location.protocol === 'file:') return targetUrl;
@@ -19,7 +34,7 @@ function getProxyUrl(targetUrl) {
 }
 
 // history: {role, content}[]，不含 system；返回 assistant 回复字符串
-export async function chat(history, userMsg, images = [], onChunk) {
+export async function chat(history, userMsg, images = [], onChunk, options = {}) {
   if (!cfg.url || !cfg.model) throw new Error('请先填写并保存 AI 接口地址和模型名称');
 
   const userContent = images.length
@@ -29,9 +44,7 @@ export async function chat(history, userMsg, images = [], onChunk) {
       ]
     : userMsg;
 
-  const systemContent = paperMd
-    ? `你是一个论文阅读助手。以下是当前论文的完整内容（Markdown 格式），请基于此内容回答用户问题：\n\n${paperMd}`
-    : '你是一个学术助手，请帮助用户理解和分析论文内容。';
+  const systemContent = buildSystemContent(options.extraContexts || []);
 
   const messages = [
     { role: 'system', content: systemContent },

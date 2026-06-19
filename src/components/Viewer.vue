@@ -654,7 +654,35 @@ function onNotesAskText(text) {
 </script>
 
 <style scoped>
-.viewer { display: flex; flex-direction: column; overflow: hidden; flex: 1; min-width: 200px; }
+.viewer {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+  min-width: 200px;
+  margin-right: var(--chat-overlay-width, 0px);
+  position: relative;
+}
+.viewer::after {
+  content: "正在调整阅读布局...";
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, .68);
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .14s ease;
+  backdrop-filter: blur(1.5px);
+}
+:global(.chat-layout-busy) .viewer::after {
+  opacity: 1;
+}
 .viewer-head {
   display: flex; align-items: center; gap: 16px;
   padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--panel); flex-shrink: 0;
@@ -708,7 +736,14 @@ function onNotesAskText(text) {
   cursor: pointer; font-size: 13px; box-shadow: var(--shadow);
 }
 .outline-show-btn:hover { background: #f0f1f3; }
-.md-view { height: 100%; overflow-y: auto; padding: 32px 48px; background: #fff; line-height: 1.7; flex: 1; }
+.md-view {
+  height: 100%;
+  overflow-y: auto;
+  padding: 32px 48px;
+  background: #fff;
+  line-height: 1.7;
+  flex: 1;
+}
 .md-view .placeholder { color: var(--muted); text-align: center; margin-top: 80px; }
 .md-view .placeholder.error { color: var(--red); }
 .md-view :deep(img) { cursor: pointer; transition: opacity .2s; }
@@ -719,7 +754,7 @@ function onNotesAskText(text) {
   box-shadow: 0 0 0 2px #e0e7ff;
   cursor: context-menu;
 }
-.pdf-wrap { height: 100%; flex: 1; }
+.pdf-wrap { height: 100%; flex: 1; background: #fff; }
 .pdf-wrap iframe { width: 100%; height: 100%; border: none; }
 .img-ctx-menu {
   position: fixed; z-index: 500;

@@ -1,5 +1,6 @@
 import { marked } from 'marked';
 import hljs from 'highlight.js';
+import katex from 'katex';
 import renderMathInElement from 'katex/contrib/auto-render';
 import { getAssetUrl } from './store.js';
 
@@ -57,6 +58,49 @@ export async function renderMarkdown(container, mdText, paperId) {
 
 export function parseMarkdown(mdText) {
   return marked.parse(mdText);
+}
+
+function renderKatexExpression(source, displayMode) {
+  try {
+    return katex.renderToString(source, {
+      displayMode,
+      throwOnError: false,
+      strict: false,
+    });
+  } catch {
+    return null;
+  }
+}
+
+export function parseMarkdownWithMath(mdText) {
+  const codeBlocks = [];
+  const mathBlocks = [];
+  const codeToken = (idx) => `@@AIPAPER_CODE_${idx}@@`;
+  const mathToken = (idx) => `@@AIPAPER_MATH_${idx}@@`;
+
+  let masked = String(mdText || '').replace(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/g, (match) => {
+    const idx = codeBlocks.push(match) - 1;
+    return codeToken(idx);
+  });
+
+  function stashMath(source, displayMode, fallback) {
+    const html = renderKatexExpression(source.trim(), displayMode);
+    if (!html) return fallback;
+    const idx = mathBlocks.push(html) - 1;
+    return mathToken(idx);
+  }
+
+  masked = masked
+    .replace(/\$\$([\s\S]+?)\$\$/g, (match, source) => stashMath(source, true, match))
+    .replace(/\\\[([\s\S]+?)\\\]/g, (match, source) => stashMath(source, true, match))
+    .replace(/\\\(([\s\S]+?)\\\)/g, (match, source) => stashMath(source, false, match))
+    .replace(/(^|[^\\$])\$([^\n$]+?)\$/g, (match, prefix, source) => {
+      const html = stashMath(source, false, match);
+      return html === match ? match : prefix + html;
+    });
+
+  masked = masked.replace(/@@AIPAPER_CODE_(\d+)@@/g, (_, idx) => codeBlocks[Number(idx)] || '');
+  return marked.parse(masked).replace(/@@AIPAPER_MATH_(\d+)@@/g, (_, idx) => mathBlocks[Number(idx)] || '');
 }
 
 export { renderMath };

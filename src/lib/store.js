@@ -188,11 +188,15 @@ export async function listPapers() {
     if (handle.kind !== 'directory') continue;
     const txt = await readFileText(handle, 'meta.json');
     if (txt) {
-      try { papers.push(JSON.parse(txt)); } catch { /* 跳过损坏的 */ }
+      try {
+        const meta = JSON.parse(txt);
+        meta.uploadedAt = meta.uploadedAt || meta.createdAt || null;
+        papers.push(meta);
+      } catch { /* 跳过损坏的 */ }
     }
   }
-  // 按创建时间倒序
-  papers.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  // 按上传时间倒序，兼容旧版本的 createdAt
+  papers.sort((a, b) => (b.uploadedAt || b.createdAt || 0) - (a.uploadedAt || a.createdAt || 0));
   return papers;
 }
 

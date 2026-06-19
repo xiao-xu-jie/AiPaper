@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div v-if="visible">
     <!-- 目录行 -->
     <div
       class="folder-row"
@@ -14,7 +14,7 @@
     </div>
 
     <!-- 子节点 -->
-    <template v-if="expanded">
+    <template v-if="expanded || searching">
       <FolderNode
         v-for="childId in node.children"
         :key="childId"
@@ -34,14 +34,15 @@
       >
         <span class="paper-icon">📄</span>
         <div class="pi-info">
-          <div class="pi-title" :title="p.title">{{ p.title }}</div>
+          <div class="pi-title" :title="displayTitle(p)">{{ displayTitle(p) }}</div>
           <div class="pi-sub">
             <span class="badge" :class="badgeClass(p)">{{ badgeLabel(p) }}</span>
+            <span class="pi-time">{{ formatUploadTime(p) }}</span>
           </div>
         </div>
       </div>
 
-      <div v-if="!node.children.length && !nodePapers.length" class="empty-folder" :style="{ paddingLeft: (depth+1)*14 + 12 + 'px' }">空</div>
+      <div v-if="!searching && !node.children.length && !nodePapers.length" class="empty-folder" :style="{ paddingLeft: (depth+1)*14 + 12 + 'px' }">空</div>
     </template>
   </div>
 </template>
@@ -54,18 +55,64 @@ const props = defineProps({ nodeId: String, depth: { type: Number, default: 0 } 
 const openCtx = inject('openCtx');
 const papers = inject('papers');
 const folders = inject('folders');
+const paperSearchText = inject('paperSearchText');
 
 const node = computed(() => folders.tree[props.nodeId] || { children: [], papers: [] });
 const expanded = computed(() => !!folders.expanded[props.nodeId]);
+const searchQuery = computed(() => (paperSearchText?.value || '').trim().toLowerCase());
+const searching = computed(() => !!searchQuery.value);
 
 function toggle() {
   folders.activeFolderId = props.nodeId;
   folders.toggle(props.nodeId);
 }
 
+function displayTitle(p) {
+  return p.remark || p.title || p.fileName || '未命名论文';
+}
+
+function uploadTimeValue(p) {
+  return p.uploadedAt || p.createdAt || null;
+}
+
+function formatUploadTime(p) {
+  const ts = uploadTimeValue(p);
+  if (!ts) return '上传时间未知';
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${day} ${h}:${min}`;
+}
+
+function matchesPaper(p) {
+  const q = searchQuery.value;
+  if (!q) return true;
+  return [
+    p.title,
+    p.fileName,
+    p.remark,
+    formatUploadTime(p),
+  ].some((v) => String(v || '').toLowerCase().includes(q));
+}
+
+function folderHasMatch(folderId) {
+  const folder = folders.tree[folderId];
+  if (!folder) return false;
+  const ownMatch = (folder.papers || [])
+    .map((id) => papers.papers.find((p) => p.id === id))
+    .filter(Boolean)
+    .some(matchesPaper);
+  return ownMatch || (folder.children || []).some(folderHasMatch);
+}
+
+const visible = computed(() => !searching.value || props.nodeId === 'root' || folderHasMatch(props.nodeId));
+
 const nodePapers = computed(() => {
   const ids = node.value.papers || [];
-  return ids.map((id) => papers.papers.find((p) => p.id === id)).filter(Boolean);
+  return ids.map((id) => papers.papers.find((p) => p.id === id)).filter(Boolean).filter(matchesPaper);
 });
 
 const STATE_MAP = {
@@ -100,6 +147,7 @@ const badgeLabel = (p) => (p.stateText && p.state !== 'done' ? p.stateText : (ST
 .pi-info { flex: 1; min-width: 0; }
 .pi-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pi-sub { margin-top: 3px; }
+.pi-time { display: inline-block; margin-left: 6px; font-size: 10px; color: var(--muted); }
 .badge { font-size: 10px; padding: 1px 6px; border-radius: 8px; }
 .badge.done { background: #e6f7ec; color: var(--green); }
 .badge.failed { background: #fce8e8; color: var(--red); }

@@ -68,10 +68,10 @@
 </template>
 
 <script setup>
-import { ref, watch, computed, nextTick, reactive, inject } from 'vue';
+import { ref, watch, computed, nextTick, reactive, inject, onUnmounted } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
-import { parseMarkdown, renderMarkdown, renderMath } from '../lib/render.js';
+import { parseMarkdown, renderMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import * as agent from '../lib/agent.js';
 import ModelSwitcher from './ModelSwitcher.vue';
@@ -132,8 +132,33 @@ watch(() => papers.currentId, async (id) => {
 
 // 流式生成中：只有当前论文就是生成目标时才更新 DOM
 const imgCache = new Map(); // rel path → object URL，避免重复请求导致图片闪烁
+let streamRenderTimer = null;
+let streamRenderSeq = 0;
 
-watch(streamText, async (text) => {
+function clearStreamRenderTimer() {
+  if (streamRenderTimer) {
+    clearTimeout(streamRenderTimer);
+    streamRenderTimer = null;
+  }
+}
+
+function clearStreamImageCache() {
+  for (const url of imgCache.values()) {
+    try { URL.revokeObjectURL(url); } catch { /* noop */ }
+  }
+  imgCache.clear();
+}
+
+function scheduleStreamRender(text) {
+  clearStreamRenderTimer();
+  const seq = ++streamRenderSeq;
+  streamRenderTimer = setTimeout(() => {
+    renderStreamMarkdown(text, seq);
+  }, 80);
+}
+
+async function renderStreamMarkdown(text, seq) {
+  if (seq !== streamRenderSeq) return;
   if (!streamEl.value || papers.noteGeneratingFor !== papers.currentId) return;
   streamEl.value.innerHTML = parseMarkdown(text) + '<span class="cursor">▌</span>';
   // 用缓存替换已知图片，未缓存的异步获取后存入缓存
@@ -150,10 +175,21 @@ watch(streamText, async (text) => {
     if (imgCache.has(rel)) img.src = imgCache.get(rel);
     img.loading = 'lazy';
   }));
-  renderMath(streamEl.value);
+}
+
+watch(streamText, (text) => {
+  scheduleStreamRender(text);
 });
 
-watch(() => papers.currentId, () => { imgCache.clear(); }, { flush: 'sync' });
+watch(() => papers.currentId, () => {
+  clearStreamRenderTimer();
+  clearStreamImageCache();
+}, { flush: 'sync' });
+
+onUnmounted(() => {
+  clearStreamRenderTimer();
+  clearStreamImageCache();
+});
 
 // 预览时用 renderMarkdown 替换图片路径
 watch([mode, noteText], async ([m]) => {

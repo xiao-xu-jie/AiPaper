@@ -171,11 +171,11 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
     res.end(
       JSON.stringify({
-        version: "2.1.0",
-        downloadUrl: "https://cdn.aipaper.chat/AI%20Paper%20Setup%202.1.0.exe",
+        version: "2.2.0",
+        downloadUrl: "https://cdn.aipaper.chat/AI%20Paper%20Setup%202.2.0.exe",
         changelog:
-          "🌐 选中翻译 | 🖍 内容高亮 | 📝 注解笔记 | 🤖 多AI提供商 | 🔧 配置弹窗化 | ⚡ 快捷切换模型",
-        releaseDate: "2026-06-18",
+          "🏷 论文标签库 | 🤖 AI 生成标签 | 🔎 标签筛选搜索 | 🗂 标签统一管理 | 📝 论文备注与上传时间 | ⚡ Markdown/公式渲染优化",
+        releaseDate: "2026-06-19",
       }),
     );
     return;

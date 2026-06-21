@@ -23,9 +23,9 @@
             <button v-if="tagStore.activeTagNames.length" class="link-btn" @click="tagStore.clearFilters()">清空</button>
           </div>
         </div>
-        <div class="tag-chip-list library-filter-tags" :class="{ expanded: tagPanelExpanded }">
+        <div class="tag-chip-list library-filter-tags" ref="tagFilterRef" :class="{ expanded: tagPanelExpanded }">
           <button
-            v-for="tag in visibleLibraryTags"
+            v-for="tag in orderedLibraryTags"
             :key="tag.id"
             class="tag-chip"
             :class="{ active: isTagActive(tag.name) }"
@@ -269,6 +269,7 @@ const width = ref(280);
 const dragging = ref(false);
 const searchText = ref('');
 const tagPanelExpanded = ref(false);
+const tagFilterRef = ref(null);
 const ctx = ref({ show: false, x: 0, y: 0, id: '', type: '' });
 const showMoveMenu = ref(false);
 const confirmDialog = ref({ show: false, msg: '', onOk: () => {} });
@@ -311,8 +312,10 @@ const orderedLibraryTags = computed(() => {
     return a.name.localeCompare(b.name, 'zh-Hans-CN');
   });
 });
-const canToggleTagPanel = computed(() => orderedLibraryTags.value.length > 6);
-const visibleLibraryTags = computed(() => (tagPanelExpanded.value ? orderedLibraryTags.value : orderedLibraryTags.value.slice(0, 6)));
+const canToggleTagPanel = computed(() => {
+  if (!tagFilterRef.value) return false;
+  return tagFilterRef.value.scrollHeight > tagFilterRef.value.clientHeight;
+});
 const hiddenTagCount = computed(() => Math.max(0, orderedLibraryTags.value.length - visibleLibraryTags.value.length));
 
 function paperById(id) {

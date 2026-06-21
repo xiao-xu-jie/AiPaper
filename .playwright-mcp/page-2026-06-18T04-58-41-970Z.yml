@@ -1,0 +1,47 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - img "AI Paper" [ref=e5]
+        - generic [ref=e6]: AI Paper
+        - generic [ref=e7]: MinerU 在线解析
+      - button "⚙️ MinerU" [ref=e8] [cursor=pointer]
+      - button "🤖 AI 模型" [active] [ref=e9] [cursor=pointer]
+      - button "❓ 帮助" [ref=e10] [cursor=pointer]
+      - button "📥 下载客户端" [ref=e11] [cursor=pointer]
+      - button "＋ 上传 PDF" [ref=e12] [cursor=pointer]
+    - generic [ref=e14]:
+      - heading "开始使用" [level=2] [ref=e15]
+      - list [ref=e16]:
+        - listitem [ref=e17]: 填写 MinerU Token 并点「保存设置」
+        - listitem [ref=e18]: 点「选择数据文件夹」指定本地存储位置
+        - listitem [ref=e19]: 上传 PDF 论文，等待解析完成即可在线预览
+      - paragraph [ref=e20]: 所有数据保存在你选择的文件夹中，下次自动加载。
+    - contentinfo [ref=e21]: © 2026 小徐. All rights reserved.
+  - generic [ref=e42]:
+    - generic [ref=e43]:
+      - heading "🤖 AI 模型配置" [level=2] [ref=e44]
+      - button "✕" [ref=e45] [cursor=pointer]
+    - generic [ref=e46]:
+      - generic [ref=e47]:
+        - generic [ref=e48]:
+          - text: AI 提供商
+          - combobox "AI 提供商" [ref=e49]:
+            - option "-- 选择提供商 --"
+            - option "OpenCode Zen (Free) (免费)" [selected]
+            - option "Kilo (Free Router) (免费)"
+        - generic [ref=e50]:
+          - text: AI 模型
+          - generic [ref=e51]:
+            - combobox "AI 模型 ↻ +" [ref=e52]:
+              - option "-- 选择模型 --" [selected]
+              - option "DeepSeek V4 Flash"
+              - option "MimoV2.5"
+              - option "Nemotron 3 Ultra"
+              - option "Nemotron 3 Super"
+            - button "↻" [ref=e53] [cursor=pointer]
+            - button "+" [ref=e54] [cursor=pointer]
+        - button "⚙️" [ref=e55] [cursor=pointer]
+        - button "+ 提供商" [ref=e56] [cursor=pointer]
+      - button "📝 笔记模板" [ref=e58] [cursor=pointer]
+    - button "保存 *" [ref=e60] [cursor=pointer]

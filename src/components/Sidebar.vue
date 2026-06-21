@@ -741,11 +741,11 @@ provide('formatUploadTime', formatUploadTime);
   gap: 6px;
 }
 .library-filter-tags {
-  max-height: 54px;
+  max-height: 108px;
   overflow: hidden;
 }
 .library-filter-tags.expanded {
-  max-height: 150px;
+  max-height: none;
   overflow-y: auto;
   padding-right: 2px;
 }

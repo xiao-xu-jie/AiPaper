@@ -1,0 +1,74 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - img "AI Paper" [ref=e5]
+        - generic [ref=e6]: AI Paper
+        - generic [ref=e7]: MinerU 在线解析
+      - button "⚙️ MinerU" [ref=e8] [cursor=pointer]
+      - button "🤖 AI 模型" [ref=e9] [cursor=pointer]
+      - button "❓ 帮助" [active] [ref=e10] [cursor=pointer]
+      - button "📥 下载客户端" [ref=e11] [cursor=pointer]
+      - button "＋ 上传 PDF" [ref=e12] [cursor=pointer]
+    - generic [ref=e14]:
+      - heading "开始使用" [level=2] [ref=e15]
+      - list [ref=e16]:
+        - listitem [ref=e17]: 点击顶部「⚙️ MinerU」配置 Token，保存后点「📁 选择数据文件夹」
+        - listitem [ref=e18]: （可选）点击「🤖 AI 模型」配置 AI 助手和笔记生成
+        - listitem [ref=e19]: 上传 PDF 论文，等待解析完成即可在线预览
+      - paragraph [ref=e20]: 所有数据保存在你选择的文件夹中，下次自动加载。
+    - contentinfo [ref=e21]: © 2026 小徐. All rights reserved.
+  - generic [ref=e23]:
+    - generic [ref=e24]:
+      - heading "使用指南" [level=2] [ref=e25]
+      - button "✕" [ref=e26] [cursor=pointer]
+    - generic [ref=e27]:
+      - generic [ref=e28]:
+        - heading "1️⃣ 配置 MinerU Token" [level=3] [ref=e29]
+        - paragraph [ref=e30]: 用于 PDF 解析服务
+        - list [ref=e31]:
+          - listitem [ref=e32]: 点击顶部「⚙️ MinerU」按钮打开配置弹窗
+          - listitem [ref=e33]: 点击 Token 输入框右侧的 🔗 按钮，前往 mineru.net
+          - listitem [ref=e34]: 在 API 管理页面创建 Token
+          - listitem [ref=e35]: 复制 Token 粘贴到输入框中，点「保存」
+      - generic [ref=e36]:
+        - heading "2️⃣ 配置 AI 模型（可选）" [level=3] [ref=e37]
+        - paragraph [ref=e38]: 用于 AI 助手对话和自动生成笔记
+        - list [ref=e39]:
+          - listitem [ref=e40]: 点击顶部「🤖 AI 模型」按钮打开配置弹窗
+          - listitem [ref=e41]:
+            - strong [ref=e42]: 选择提供商
+            - text: ：内置免费提供商（OpenCode Zen / Kilo）可直接使用，也可点「+ 提供商」添加自定义
+          - listitem [ref=e43]:
+            - strong [ref=e44]: 选择模型
+            - text: ：从下拉列表选择，或点 ↻ 获取模型列表，或点 + 添加自定义模型
+          - listitem [ref=e45]: 自定义提供商可点 ⚙️ 编辑名称、接口地址、密钥
+      - generic [ref=e46]:
+        - heading "3️⃣ 选择数据文件夹" [level=3] [ref=e47]
+        - paragraph [ref=e48]: 在「⚙️ MinerU」配置弹窗中点「📁 选择数据文件夹」，选择一个本地文件夹用于存储：
+        - list [ref=e49]:
+          - listitem [ref=e50]: 上传的 PDF 原文
+          - listitem [ref=e51]: 解析后的 Markdown 内容
+          - listitem [ref=e52]: 提取的图片资源
+          - listitem [ref=e53]: 阅读笔记和对话记录
+      - generic [ref=e54]:
+        - heading "4️⃣ 开始使用" [level=3] [ref=e55]
+        - list [ref=e56]:
+          - listitem [ref=e57]:
+            - strong [ref=e58]: 上传 PDF
+            - text: ：点击「＋ 上传 PDF」或拖拽文件到页面
+          - listitem [ref=e59]:
+            - strong [ref=e60]: 查看内容
+            - text: ：解析完成后可切换 Markdown、原文 PDF、阅读笔记三个标签页
+          - listitem [ref=e61]:
+            - strong [ref=e62]: AI 助手
+            - text: ：点击「💬 AI 助手」或右键选中内容/图片快捷提问
+          - listitem [ref=e63]:
+            - strong [ref=e64]: 生成笔记
+            - text: ：切换到阅读笔记标签页，点击「✨ AI 生成笔记」
+      - generic [ref=e65]:
+        - heading "💡 提示" [level=3] [ref=e66]
+        - list [ref=e67]:
+          - listitem [ref=e68]: 所有数据保存在本地，下次打开自动恢复
+          - listitem [ref=e69]: Markdown 和笔记支持图片点击预览、右键复制
+          - listitem [ref=e70]: 支持查看大纲目录，点击快速跳转

@@ -1,0 +1,19 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - img "AI Paper" [ref=e5]
+      - generic [ref=e6]: AI Paper
+      - generic [ref=e7]: MinerU 在线解析
+    - button "⚙️ MinerU" [ref=e8] [cursor=pointer]
+    - button "🤖 AI 模型" [ref=e9] [cursor=pointer]
+    - button "❓ 帮助" [ref=e10] [cursor=pointer]
+    - button "📥 下载客户端" [ref=e11] [cursor=pointer]
+    - button "＋ 上传 PDF" [ref=e12] [cursor=pointer]
+  - generic [ref=e14]:
+    - heading "开始使用" [level=2] [ref=e15]
+    - list [ref=e16]:
+      - listitem [ref=e17]: 填写 MinerU Token 并点「保存设置」
+      - listitem [ref=e18]: 点「选择数据文件夹」指定本地存储位置
+      - listitem [ref=e19]: 上传 PDF 论文，等待解析完成即可在线预览
+    - paragraph [ref=e20]: 所有数据保存在你选择的文件夹中，下次自动加载。
+  - contentinfo [ref=e21]: © 2026 小徐. All rights reserved.

@@ -311,8 +311,8 @@ const orderedLibraryTags = computed(() => {
     return a.name.localeCompare(b.name, 'zh-Hans-CN');
   });
 });
-const canToggleTagPanel = computed(() => orderedLibraryTags.value.length > 12);
-const visibleLibraryTags = computed(() => (tagPanelExpanded.value ? orderedLibraryTags.value : orderedLibraryTags.value.slice(0, 12)));
+const canToggleTagPanel = computed(() => orderedLibraryTags.value.length > 6);
+const visibleLibraryTags = computed(() => (tagPanelExpanded.value ? orderedLibraryTags.value : orderedLibraryTags.value.slice(0, 6)));
 const hiddenTagCount = computed(() => Math.max(0, orderedLibraryTags.value.length - visibleLibraryTags.value.length));
 
 function paperById(id) {
@@ -741,7 +741,7 @@ provide('formatUploadTime', formatUploadTime);
   gap: 6px;
 }
 .library-filter-tags {
-  max-height: 108px;
+  max-height: 52px;
   overflow: hidden;
 }
 .library-filter-tags.expanded {

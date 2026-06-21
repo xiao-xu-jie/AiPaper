@@ -18,7 +18,7 @@
           <span>标签</span>
           <div class="tag-head-actions">
             <button v-if="canToggleTagPanel" class="link-btn" @click="tagPanelExpanded = !tagPanelExpanded">
-              {{ tagPanelExpanded ? '收起' : `展开 ${hiddenTagCount}` }}
+              {{ tagPanelExpanded ? '收起' : '展开' }}
             </button>
             <button v-if="tagStore.activeTagNames.length" class="link-btn" @click="tagStore.clearFilters()">清空</button>
           </div>
@@ -250,7 +250,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, provide, inject } from 'vue';
+import { ref, computed, nextTick, onMounted, provide, inject } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useFoldersStore } from '../stores/folders.js';
 import { useTagsStore, normalizeTagNames, normalizeTagName } from '../stores/tags.js';
@@ -659,6 +659,15 @@ provide('tags', tagStore);
 provide('paperSearchText', searchText);
 provide('paperMatchesFilters', matchesPaperFilters);
 provide('formatUploadTime', formatUploadTime);
+
+onMounted(() => {
+  nextTick(() => {
+    if (tagFilterRef.value) {
+      const overflow = tagFilterRef.value.scrollHeight > tagFilterRef.value.clientHeight;
+      console.log('tagFilterRef scrollHeight:', tagFilterRef.value.scrollHeight, 'clientHeight:', tagFilterRef.value.clientHeight, 'overflow:', overflow);
+    }
+  });
+});
 </script>
 
 <style scoped>

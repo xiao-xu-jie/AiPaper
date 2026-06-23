@@ -216,6 +216,53 @@
   </Teleport>
 
   <Teleport to="body">
+    <div v-if="aiRemarkPanel.show" class="folder-dialog-backdrop" @click="closeAiRemarkPanel">
+      <div class="folder-dialog ai-remark-dialog" @click.stop>
+        <div class="fd-title">AI 生成备注</div>
+        <div class="fd-hint">{{ aiRemarkPaper?.title }}</div>
+
+        <div v-if="aiRemarkPanel.loading" class="ai-tag-loading">
+          <span class="ai-spinner" />
+          <span>正在分析论文内容...</span>
+        </div>
+
+        <div v-else-if="aiRemarkPanel.error" class="ai-tag-error">
+          {{ aiRemarkPanel.error }}
+        </div>
+
+        <template v-else>
+          <div v-if="aiRemarkPaper?.remark" class="ai-tag-section">
+            <div class="section-label">当前备注</div>
+            <div class="ai-remark-current">{{ aiRemarkPaper.remark }}</div>
+          </div>
+
+          <div class="ai-tag-section">
+            <div class="section-label">AI 建议备注（可直接编辑）</div>
+            <textarea
+              v-model="aiRemarkPanel.draft"
+              class="fd-textarea"
+              rows="3"
+              placeholder="AI 将根据论文内容生成简短备注"
+            />
+          </div>
+        </template>
+
+        <div class="fd-actions">
+          <button class="btn small" @click="closeAiRemarkPanel">取消</button>
+          <button class="btn small" :disabled="aiRemarkPanel.loading" @click="regenerateAiRemark">重新生成</button>
+          <button
+            class="btn small primary"
+            :disabled="aiRemarkPanel.loading || !aiRemarkPanel.draft.trim()"
+            @click="commitAiRemark"
+          >
+            保存备注
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
     <div v-if="confirmDialog.show" class="folder-dialog-backdrop" @click="confirmDialog.show = false">
       <div class="folder-dialog" @click.stop>
         <div class="fd-title">{{ confirmDialog.msg }}</div>
@@ -234,6 +281,7 @@
       <button v-if="ctx.type === 'folder' && ctx.id !== 'root'" class="danger" @click="delFolder(ctx.id)">删除目录</button>
       <template v-if="ctx.type === 'paper'">
         <button @click="startRemark(ctx.id)">{{ paperById(ctx.id)?.remark ? '编辑备注' : '添加备注' }}</button>
+        <button :disabled="aiRemarking" @click="generateRemark(ctx.id)">AI 生成备注</button>
         <button v-if="paperById(ctx.id)?.remark" @click="removeRemark(ctx.id)">删除备注</button>
         <button @click="startTagDialog(ctx.id)">编辑标签</button>
         <button :disabled="aiTagging" @click="generateTags(ctx.id)">AI 生成标签</button>
@@ -299,11 +347,20 @@ const aiTagPanel = ref({
   tags: [],
   selected: [],
 });
+const aiRemarking = ref(false);
+const aiRemarkPanel = ref({
+  show: false,
+  paperId: '',
+  loading: false,
+  error: '',
+  draft: '',
+});
 
 const allFolders = computed(() => Object.values(folders.tree));
 const currentRemarkPaper = computed(() => paperById(remarkTarget.value));
 const currentTagPaper = computed(() => paperById(tagTarget.value));
 const aiTagPaper = computed(() => paperById(aiTagPanel.value.paperId));
+const aiRemarkPaper = computed(() => paperById(aiRemarkPanel.value.paperId));
 const searchQuery = computed(() => searchText.value.trim().toLowerCase());
 const activeTagKeys = computed(() => new Set(tagStore.activeTagNames.map((tag) => tag.toLowerCase())));
 const filteredPaperIds = computed(() => papers.papers.filter(matchesPaperFilters).map((paper) => paper.id));
@@ -657,6 +714,89 @@ async function commitAiTags() {
   toast('AI 标签已保存', 'success');
 }
 
+function parseAiRemark(text) {
+  const raw = String(text || '').trim();
+  // 去除常见的引号、Markdown 代码块包裹
+  const stripped = raw
+    .replace(/^```[a-zA-Z]*\n?/g, '')
+    .replace(/```$/g, '')
+    .replace(/^["'「『《]+|["'」』》]+$/g, '')
+    .trim();
+  // 备注以单行短句为佳，限制 60 字
+  const firstParagraph = stripped.split(/\n+/).find((line) => line.trim()) || stripped;
+  return firstParagraph.trim().slice(0, 60);
+}
+
+async function generateRemark(id) {
+  const paper = paperById(id);
+  if (!paper || aiRemarking.value) return;
+  ctx.value.show = false;
+  aiRemarkPanel.value = {
+    show: true,
+    paperId: id,
+    loading: true,
+    error: '',
+    draft: '',
+  };
+  if (paper.state !== 'done') {
+    aiRemarkPanel.value.loading = false;
+    aiRemarkPanel.value.error = '请先等待论文解析完成';
+    return;
+  }
+  if (!cfg.aiUrl || !cfg.aiModel) {
+    aiRemarkPanel.value.loading = false;
+    aiRemarkPanel.value.error = '请先配置 AI 接口地址和模型';
+    return;
+  }
+  aiRemarking.value = true;
+  try {
+    const md = await store.loadMarkdown(id);
+    const prompt = [
+      '请根据下面论文内容生成一句简短的中文备注，用于在论文库列表中快速识别这篇论文的特点。',
+      '要求：',
+      '1. 不超过 30 个字，单句中文，无引号、无序号、无 Markdown；',
+      '2. 突出研究主题、方法或核心贡献，避免空泛的概述；',
+      '3. 直接返回备注内容本身，不要任何前后缀。',
+      `论文题目：${paper.title || paper.fileName || ''}`,
+      paper.tags?.length ? `论文标签：${paper.tags.join('、')}` : '',
+      '论文内容：',
+      String(md || '').slice(0, 12000),
+    ].filter(Boolean).join('\n');
+    const reply = await agent.chat([], prompt, [], () => {});
+    const generated = parseAiRemark(reply);
+    if (!generated) {
+      aiRemarkPanel.value.error = 'AI 未返回有效备注';
+      return;
+    }
+    aiRemarkPanel.value.draft = generated;
+  } catch (e) {
+    aiRemarkPanel.value.error = '生成备注失败：' + e.message;
+  } finally {
+    aiRemarkPanel.value.loading = false;
+    aiRemarking.value = false;
+  }
+}
+
+function closeAiRemarkPanel() {
+  if (aiRemarkPanel.value.loading) return;
+  aiRemarkPanel.value.show = false;
+}
+
+async function regenerateAiRemark() {
+  const id = aiRemarkPanel.value.paperId;
+  if (!id || aiRemarkPanel.value.loading) return;
+  await generateRemark(id);
+}
+
+async function commitAiRemark() {
+  const paper = aiRemarkPaper.value;
+  const text = aiRemarkPanel.value.draft.trim();
+  if (!paper || !text) return;
+  await papers.updateRemark(paper.id, text);
+  closeAiRemarkPanel();
+  toast('备注已保存', 'success');
+}
+
 async function uploadNoteToSiyuan(id) {
   ctx.value.show = false;
   if (siyuanUploading.value) return;
@@ -911,6 +1051,28 @@ onMounted(() => {
 }
 .tag-dialog { width: 380px; }
 .ai-tag-dialog { width: 420px; }
+.ai-remark-dialog { width: 460px; }
+.ai-remark-current {
+  border: 1px solid var(--border);
+  background: #f7f8fa;
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+  word-break: break-word;
+}
+.fd-textarea {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+  line-height: 1.5;
+  resize: vertical;
+  font-family: inherit;
+}
+.fd-textarea:focus { border-color: var(--primary); }
 .fd-title {
   font-weight: 600;
   font-size: 15px;

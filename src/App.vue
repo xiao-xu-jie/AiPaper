@@ -45,7 +45,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, provide, nextTick } from 'vue';
+import { ref, onMounted, onBeforeUnmount, provide, nextTick } from 'vue';
 import TopBar from './components/TopBar.vue';
 import Sidebar from './components/Sidebar.vue';
 import Viewer from './components/Viewer.vue';
@@ -62,6 +62,7 @@ const dirReady = ref(false);
 const restoreHandle = ref(null);
 const chatOpen = ref(false);
 const dropOver = ref(false);
+const dragDepth = ref(0);
 const fileInput = ref(null);
 const toastState = ref({ msg: '', cls: '', show: false });
 
@@ -146,6 +147,7 @@ function hasExternalFiles(e) {
 
 function onDragEnter(e) {
   if (!hasExternalFiles(e)) return;
+  dragDepth.value++;
   dropOver.value = true;
 }
 
@@ -154,17 +156,48 @@ function onDragOver(e) {
 }
 
 function onDragLeave(e) {
-  // 防止子元素触发的 leave 闪烁：只有真正离开 main 时才清除
-  if (e.currentTarget === e.target) dropOver.value = false;
+  if (!hasExternalFiles(e)) return;
+  dragDepth.value = Math.max(0, dragDepth.value - 1);
+  if (dragDepth.value === 0) dropOver.value = false;
 }
 
 function onDrop(e) {
+  dragDepth.value = 0;
   dropOver.value = false;
   const files = [...(e.dataTransfer?.files || [])].filter((f) => /\.pdf$/i.test(f.name));
   if (!files.length) return;
   if (!cfg.token) { toast('请先配置 MinerU Token', 'error'); return; }
   onFileInput({ target: { files }, value: '' });
 }
+
+function resetDragState() {
+  dragDepth.value = 0;
+  dropOver.value = false;
+}
+
+// 兜底：用户拖出浏览器窗口、按 ESC、或在窗口外松开鼠标时，
+// main 的 dragleave 可能不触发，导致 dropOver 卡死。
+function onWindowDragLeave(e) {
+  // dragleave 触发到 window/document 时，relatedTarget 为 null 表示真正离开了窗口
+  if (e.relatedTarget === null || e.clientX <= 0 || e.clientY <= 0
+      || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+    resetDragState();
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('dragleave', onWindowDragLeave);
+  window.addEventListener('dragend', resetDragState);
+  window.addEventListener('drop', resetDragState);
+  window.addEventListener('blur', resetDragState);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('dragleave', onWindowDragLeave);
+  window.removeEventListener('dragend', resetDragState);
+  window.removeEventListener('drop', resetDragState);
+  window.removeEventListener('blur', resetDragState);
+});
 
 const chatPanelRef = ref(null);
 const pendingAskText = ref(null);

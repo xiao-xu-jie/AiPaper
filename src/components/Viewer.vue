@@ -9,6 +9,8 @@
           阅读笔记<span v-if="papers.isNoteGenerating(papers.currentId)" class="tab-badge">●</span>
         </button>
       </div>
+      <button v-if="paper && view === 'md'" class="btn small" title="下载 Markdown" @click="downloadMarkdown">⬇ 下载</button>
+      <button v-if="paper && view === 'notes'" class="btn small" title="下载阅读笔记" @click="downloadNote">⬇ 下载</button>
       <button class="btn small" @click="$emit('toggleChat')">💬 AI 助手</button>
     </div>
 
@@ -96,7 +98,7 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, onMounted, nextTick } from 'vue';
+import { ref, computed, reactive, onMounted, nextTick, inject } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
 import { renderMarkdown, parseMarkdown } from '../lib/render.js';
@@ -106,6 +108,7 @@ import NotesView from './NotesView.vue';
 
 const papers = usePapersStore();
 const cfg = useConfigStore();
+const toast = inject('toast', () => {});
 const emit = defineEmits(['toggleChat', 'askImage', 'askText']);
 const view = ref('md');
 const mdBox = ref(null);
@@ -130,6 +133,48 @@ const noteEditorArea = ref(null);
 
 const paper = computed(() => papers.currentPaper);
 const title = computed(() => paper.value?.title || '未选择论文');
+
+function sanitizeFileName(name) {
+  return String(name || '').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || '论文';
+}
+
+function downloadBlob(filename, text) {
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function downloadMarkdown() {
+  const p = paper.value;
+  if (!p) return;
+  try {
+    const md = await store.loadMarkdown(p.id);
+    if (!md?.trim()) { toast('该论文还没有 Markdown 内容', 'error'); return; }
+    downloadBlob(`${sanitizeFileName(p.remark || p.title || p.fileName)}.md`, md);
+    toast('Markdown 已下载', 'success');
+  } catch (e) {
+    toast('下载失败：' + (e?.message || e), 'error');
+  }
+}
+
+async function downloadNote() {
+  const p = paper.value;
+  if (!p) return;
+  try {
+    const note = await store.loadNote(p.id);
+    if (!note?.trim()) { toast('该论文还没有阅读笔记', 'error'); return; }
+    downloadBlob(`${sanitizeFileName(p.remark || p.title || p.fileName)} - 阅读笔记.md`, note);
+    toast('阅读笔记已下载', 'success');
+  } catch (e) {
+    toast('下载失败：' + (e?.message || e), 'error');
+  }
+}
 
 function extractOutline() {
   if (!mdBox.value) return [];

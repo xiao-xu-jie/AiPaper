@@ -286,6 +286,8 @@
         <button @click="startTagDialog(ctx.id)">编辑标签</button>
         <button :disabled="aiTagging" @click="generateTags(ctx.id)">AI 生成标签</button>
         <button @click="showMoveMenu = true">移动到目录</button>
+        <button @click="downloadMarkdown(ctx.id)">下载 Markdown</button>
+        <button @click="downloadNote(ctx.id)">下载阅读笔记</button>
         <button :disabled="siyuanUploading" @click="uploadNoteToSiyuan(ctx.id)">{{ siyuanUploading ? '上传中...' : '上传笔记到思源' }}</button>
         <button class="danger" @click="delPaper(ctx.id)">删除论文</button>
       </template>
@@ -795,6 +797,52 @@ async function commitAiRemark() {
   await papers.updateRemark(paper.id, text);
   closeAiRemarkPanel();
   toast('备注已保存', 'success');
+}
+
+function sanitizeFileName(name) {
+  return String(name || '').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || '论文';
+}
+
+function downloadBlob(filename, text) {
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+async function downloadMarkdown(id) {
+  ctx.value.show = false;
+  const paper = paperById(id);
+  if (!paper) return;
+  try {
+    const md = await store.loadMarkdown(id);
+    if (!md?.trim()) { toast('该论文还没有 Markdown 内容', 'error'); return; }
+    const name = sanitizeFileName(paper.remark || paper.title || paper.fileName);
+    downloadBlob(`${name}.md`, md);
+    toast('Markdown 已下载', 'success');
+  } catch (e) {
+    toast('下载失败：' + (e?.message || e), 'error');
+  }
+}
+
+async function downloadNote(id) {
+  ctx.value.show = false;
+  const paper = paperById(id);
+  if (!paper) return;
+  try {
+    const note = await store.loadNote(id);
+    if (!note?.trim()) { toast('该论文还没有阅读笔记', 'error'); return; }
+    const name = sanitizeFileName(paper.remark || paper.title || paper.fileName);
+    downloadBlob(`${name} - 阅读笔记.md`, note);
+    toast('阅读笔记已下载', 'success');
+  } catch (e) {
+    toast('下载失败：' + (e?.message || e), 'error');
+  }
 }
 
 async function uploadNoteToSiyuan(id) {

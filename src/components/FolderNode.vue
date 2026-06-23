@@ -31,13 +31,22 @@
         v-for="p in nodePapers"
         :key="p.id"
         class="paper-item"
-        :class="{ active: p.id === papers.currentId, dragging: draggingPaperId === p.id }"
+        :class="{
+          active: p.id === papers.currentId,
+          dragging: draggingPaperId === p.id,
+          'drop-before': dropIndicator === p.id + ':before',
+          'drop-after': dropIndicator === p.id + ':after',
+        }"
         :style="{ paddingLeft: (depth + 1) * 14 + 12 + 'px' }"
         :draggable="true"
         @click="papers.open(p.id)"
         @contextmenu.prevent="openCtx($event, p.id, 'paper')"
         @dragstart="onPaperDragStart($event, p.id)"
         @dragend="onDragEnd"
+        @dragenter.prevent.stop="onPaperDragEnter($event, p.id)"
+        @dragover.prevent.stop="onPaperDragOver($event, p.id)"
+        @dragleave="onPaperDragLeave($event, p.id)"
+        @drop.prevent.stop="onPaperDrop($event, p.id)"
       >
         <span class="paper-icon">📄</span>
         <div class="pi-info">
@@ -96,6 +105,7 @@ const activeTagKeys = computed(() => new Set((tags?.activeTagNames || []).map((t
 const filtering = computed(() => !!searchQuery.value || activeTagKeys.value.size > 0);
 
 const isDropOver = ref(false);
+const dropIndicator = ref(null); // 'paperId:before' | 'paperId:after'
 const draggingPaperId = computed(() => (dragState?.value?.kind === 'paper' ? dragState.value.id : null));
 const isDraggingSelf = computed(() => dragState?.value?.kind === 'folder' && dragState.value.id === props.nodeId);
 
@@ -122,6 +132,45 @@ function onFolderDragStart(e) {
 function onDragEnd() {
   if (dragState) dragState.value = null;
   isDropOver.value = false;
+  dropIndicator.value = null;
+}
+
+function paperDropPosition(e, target) {
+  const rect = target.getBoundingClientRect();
+  return e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+}
+
+function canAcceptPaperReorder(paperId) {
+  const state = dragState?.value;
+  if (state?.kind !== 'paper') return false;
+  return state.id !== paperId;
+}
+
+function onPaperDragEnter(e, paperId) {
+  if (!canAcceptPaperReorder(paperId)) return;
+  dropIndicator.value = `${paperId}:${paperDropPosition(e, e.currentTarget)}`;
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function onPaperDragOver(e, paperId) {
+  if (!canAcceptPaperReorder(paperId)) return;
+  dropIndicator.value = `${paperId}:${paperDropPosition(e, e.currentTarget)}`;
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function onPaperDragLeave(e, paperId) {
+  if (e.currentTarget.contains(e.relatedTarget)) return;
+  if (dropIndicator.value?.startsWith(`${paperId}:`)) dropIndicator.value = null;
+}
+
+async function onPaperDrop(e, paperId) {
+  const state = dragState?.value;
+  const indicator = dropIndicator.value;
+  dropIndicator.value = null;
+  if (!canAcceptPaperReorder(paperId) || !indicator) return;
+  const position = indicator.endsWith(':after') ? 'after' : 'before';
+  await folders.reorderPaperAt(state.id, paperId, position);
+  if (dragState) dragState.value = null;
 }
 
 function canAccept(state) {
@@ -290,6 +339,12 @@ const badgeLabel = (p) => (p.stateText && p.state !== 'done' ? p.stateText : (ST
 .paper-item.active {
   background: #eef1ff;
   border-left: 3px solid var(--primary);
+}
+.paper-item.drop-before {
+  box-shadow: inset 0 2px 0 0 var(--primary);
+}
+.paper-item.drop-after {
+  box-shadow: inset 0 -2px 0 0 var(--primary);
 }
 .paper-icon {
   font-size: 13px;

@@ -87,6 +87,27 @@ export const useFoldersStore = defineStore('folders', {
       await this._persist();
     },
 
+    // 把 paperId 拖到 anchorPaperId 的前/后，可跨目录
+    async reorderPaperAt(paperId, anchorPaperId, position = 'before') {
+      if (!paperId || !anchorPaperId || paperId === anchorPaperId) return false;
+      // 锚点必须能找到所属目录
+      const anchorFolder = Object.values(this.tree).find((f) => (f.papers || []).includes(anchorPaperId));
+      if (!anchorFolder) return false;
+      // 先从所有目录移除被拖动的论文
+      for (const f of Object.values(this.tree)) {
+        f.papers = f.papers.filter((p) => p !== paperId);
+      }
+      const list = anchorFolder.papers;
+      const idx = list.indexOf(anchorPaperId);
+      if (idx < 0) {
+        list.push(paperId);
+      } else {
+        list.splice(position === 'after' ? idx + 1 : idx, 0, paperId);
+      }
+      await this._persist();
+      return true;
+    },
+
     // 判断目录是否为另一目录的祖先（避免拖入自身或子目录形成环）
     isAncestor(ancestorId, descendantId) {
       let cur = this.getParentFolder(descendantId);

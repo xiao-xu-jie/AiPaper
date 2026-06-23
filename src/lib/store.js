@@ -180,6 +180,16 @@ export async function getAssetUrl(paperId, relPath) {
   }
 }
 
+export async function loadAssetBlob(paperId, relPath) {
+  const dir = await getPaperDir(paperId);
+  const parts = relPath.split('/').filter(Boolean);
+  const name = parts.pop();
+  let cur = dir;
+  for (const p of parts) cur = await cur.getDirectoryHandle(p);
+  const fh = await cur.getFileHandle(name);
+  return fh.getFile();
+}
+
 // 列出所有历史论文（读取每个子目录的 meta.json）
 export async function listPapers() {
   assertRoot();

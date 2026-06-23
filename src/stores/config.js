@@ -11,6 +11,65 @@ function autoProxyPrefix() {
   return `${window.location.origin}/proxy?url=`;
 }
 
+const LOCAL_BUILTIN_PROVIDERS = [
+  {
+    id: 'opencode-zen',
+    name: 'OpenCode Zen (Free)',
+    baseUrl: 'https://opencode.ai/zen/v1',
+    apiKey: '',
+    builtin: true,
+    models: [
+      { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash' },
+      { id: 'mimo-v2.5-free', name: 'MimoV2.5' },
+      { id: 'nemotron-3-ultra-free', name: 'Nemotron 3 Ultra' },
+      { id: 'nemotron-3-super-free', name: 'Nemotron 3 Super' },
+    ],
+  },
+  {
+    id: 'kilo',
+    name: 'Kilo (Free Router)',
+    baseUrl: 'https://api.kilo.ai/api/gateway',
+    apiKey: '',
+    builtin: true,
+    models: [{ id: 'kilo-auto/free', name: 'Kilo Auto (Free Router)' }],
+  },
+];
+
+function cloneProvider(provider) {
+  return {
+    ...provider,
+    models: [...(provider.models || [])],
+    customModels: [...(provider.customModels || [])],
+  };
+}
+
+function mergeBuiltinProviders(existingProviders, remoteProviders = []) {
+  const existingById = new Map(existingProviders.map((provider) => [provider.id, provider]));
+  const builtinsById = new Map();
+
+  for (const provider of LOCAL_BUILTIN_PROVIDERS) {
+    builtinsById.set(provider.id, cloneProvider(provider));
+  }
+
+  for (const provider of remoteProviders) {
+    if (!provider?.id) continue;
+    builtinsById.set(provider.id, { ...cloneProvider(provider), builtin: true });
+  }
+
+  const builtins = [...builtinsById.values()].map((provider) => {
+    const existing = existingById.get(provider.id);
+    if (!existing) return provider;
+    return {
+      ...provider,
+      apiKey: existing.apiKey || provider.apiKey || '',
+      customModels: existing.customModels || [],
+    };
+  });
+
+  const custom = existingProviders.filter((provider) => !provider.builtin);
+  return [...builtins, ...custom];
+}
+
 const DEFAULT_NOTE_TEMPLATE = `# 论文阅读笔记：{{title}}
 
 > 📅 笔记日期：YYYY-MM-DD
@@ -140,6 +199,7 @@ export const useConfigStore = defineStore('config', {
     async init() {
       const effectiveProxy = autoProxyPrefix();
       mineru.setProxy(effectiveProxy);
+      this.providers = mergeBuiltinProviders(this.providers);
       await this.loadBuiltinProviders();
       if (!this.currentProviderId && this.providers.length) {
         this.currentProviderId = this.providers[0].id;
@@ -150,23 +210,17 @@ export const useConfigStore = defineStore('config', {
     // 从 /api/providers 拉取预设提供商,合并到 providers(保留用户的 customModels 和自定义 provider)
     // Electron 用公网 aipaper.chat,网页版用同源 /api/providers(经 proxy)
     async loadBuiltinProviders() {
+      let remoteProviders = [];
       try {
         const isElectron = window.location.protocol === 'file:' || navigator.userAgent.includes('Electron');
         const fetchUrl = isElectron ? 'https://aipaper.chat/api/providers' : '/api/providers';
         const res = await fetch(fetchUrl);
         const data = await res.json();
-        const builtins = data.providers || [];
-        const custom = this.providers.filter((p) => !p.builtin);
-        const merged = builtins.map((b) => {
-          const existing = this.providers.find((p) => p.id === b.id);
-          return existing
-            ? { ...b, apiKey: existing.apiKey, customModels: existing.customModels || [] }
-            : b;
-        });
-        this.providers = [...merged, ...custom];
+        remoteProviders = Array.isArray(data.providers) ? data.providers : [];
       } catch (e) {
         console.warn('加载预设提供商失败:', e.message);
       }
+      this.providers = mergeBuiltinProviders(this.providers, remoteProviders);
     },
 
     save() {

@@ -13,13 +13,12 @@ export const usePapersStore = defineStore('papers', {
     papers: [],
     currentId: null,
     currentMd: null,
-    noteGenerating: false,
-    noteStream: '',
-    noteResult: null,
-    noteGeneratingFor: null, // 正在为哪篇论文生成
+    noteTasks: {},
   }),
   getters: {
     currentPaper: (s) => s.papers.find((p) => p.id === s.currentId) || null,
+    noteTask: (s) => (paperId) => s.noteTasks[paperId] || null,
+    isNoteGenerating: (s) => (paperId) => Boolean(s.noteTasks[paperId]?.generating),
   },
   actions: {
     async refresh() {
@@ -47,6 +46,7 @@ export const usePapersStore = defineStore('papers', {
       }
       this.currentId = id;
       const md = await store.loadMarkdown(id).catch(() => null);
+      if (this.currentId !== id) return;
       this.currentMd = md;
     },
 
@@ -70,6 +70,7 @@ export const usePapersStore = defineStore('papers', {
       };
       this.papers.unshift(meta);
       this.currentId = paperId;
+      this.currentMd = null;
 
       // 加入当前目录
       const { useFoldersStore } = await import('./folders.js');
@@ -121,13 +122,18 @@ export const usePapersStore = defineStore('papers', {
       this._patch(paperId, { stateText: '下载结果...' });
       const buf = await mineru.downloadZip(result.full_zip_url);
       await this._extractZip(paperId, buf);
+      if (this.currentId === paperId) {
+        this.currentMd = await store.loadMarkdown(paperId).catch(() => null);
+      }
       this._patch(paperId, { state: 'done', stateText: '已完成', progress: 100, doneAt: Date.now() });
       await this.refresh();
       // key 变化触发 Viewer 重建：currentId null → paperId
       if (this.currentId === paperId) {
         this.currentId = null;
+        this.currentMd = null;
         await new Promise((r) => setTimeout(r, 0));
         this.currentId = paperId;
+        this.currentMd = await store.loadMarkdown(paperId).catch(() => null);
       }
     },
 
@@ -164,8 +170,45 @@ export const usePapersStore = defineStore('papers', {
       await store.deletePaper(paperId);
       const { useFoldersStore } = await import('./folders.js');
       await useFoldersStore().removePaper(paperId);
+      delete this.noteTasks[paperId];
       if (this.currentId === paperId) { this.currentId = null; this.currentMd = null; }
       await this.refresh();
+    },
+
+    beginNoteGeneration(paperId) {
+      this.noteTasks[paperId] = {
+        generating: true,
+        stream: '',
+        error: '',
+        updatedAt: Date.now(),
+      };
+    },
+
+    appendNoteStream(paperId, chunk) {
+      const task = this.noteTasks[paperId];
+      if (!task?.generating) return;
+      task.stream += chunk;
+      task.updatedAt = Date.now();
+    },
+
+    finishNoteGeneration(paperId) {
+      const task = this.noteTasks[paperId];
+      if (!task) return;
+      task.generating = false;
+      task.stream = '';
+      task.error = '';
+      task.updatedAt = Date.now();
+    },
+
+    failNoteGeneration(paperId, message) {
+      const task = this.noteTasks[paperId] || {};
+      this.noteTasks[paperId] = {
+        ...task,
+        generating: false,
+        stream: '',
+        error: message || '生成失败',
+        updatedAt: Date.now(),
+      };
     },
 
     async updateRemark(paperId, remark) {

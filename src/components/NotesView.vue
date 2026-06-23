@@ -91,9 +91,10 @@ const preview = reactive({ show: false, src: '' });
 const showOutline = ref(true);
 const outline = ref([]);
 
-// generating / streamText 用 store，保证跨 tab 切换不丢失
-const generating = computed(() => papers.noteGenerating && papers.noteGeneratingFor === papers.currentId);
-const streamText = computed(() => papers.noteStream);
+// 生成状态按论文隔离，支持多篇论文同时后台生成。
+const currentNoteTask = computed(() => papers.currentId ? papers.noteTask(papers.currentId) : null);
+const generating = computed(() => Boolean(currentNoteTask.value?.generating));
+const streamText = computed(() => currentNoteTask.value?.stream || '');
 
 function extractOutline() {
   if (!previewEl.value) return [];
@@ -120,13 +121,18 @@ watch(() => papers.currentId, async (id) => {
   statusText.value = '';
   if (!id) return;
   // 若正在为当前论文生成，显示进行中状态即可
-  if (papers.noteGeneratingFor === id) {
+  const task = papers.noteTask(id);
+  if (task?.generating) {
     statusText.value = '正在生成...';
+    mode.value = 'preview';
+    await nextTick();
+    scheduleStreamRender(task.stream || '', id);
     return;
   }
   const saved = await store.loadNote(id).catch(() => null);
+  if (papers.currentId !== id) return;
   noteText.value = saved || '';
-  statusText.value = saved ? '已加载已保存笔记' : '';
+  statusText.value = task?.error ? `生成失败：${task.error}` : (saved ? '已加载已保存笔记' : '');
   mode.value = saved ? 'preview' : 'edit';
 }, { immediate: true });
 
@@ -149,17 +155,17 @@ function clearStreamImageCache() {
   imgCache.clear();
 }
 
-function scheduleStreamRender(text) {
+function scheduleStreamRender(text, paperId = papers.currentId) {
   clearStreamRenderTimer();
   const seq = ++streamRenderSeq;
   streamRenderTimer = setTimeout(() => {
-    renderStreamMarkdown(text, seq);
+    renderStreamMarkdown(text, seq, paperId);
   }, 80);
 }
 
-async function renderStreamMarkdown(text, seq) {
+async function renderStreamMarkdown(text, seq, paperId) {
   if (seq !== streamRenderSeq) return;
-  if (!streamEl.value || papers.noteGeneratingFor !== papers.currentId) return;
+  if (!streamEl.value || papers.currentId !== paperId || !papers.isNoteGenerating(paperId)) return;
   streamEl.value.innerHTML = parseMarkdown(text) + '<span class="cursor">▌</span>';
   // 用缓存替换已知图片，未缓存的异步获取后存入缓存
   const imgs = streamEl.value.querySelectorAll('img');
@@ -169,16 +175,17 @@ async function renderStreamMarkdown(text, seq) {
     const rel = src.replace(/^\.?\//, '');
     if (!imgCache.has(rel)) {
       const { getAssetUrl } = await import('../lib/store.js');
-      const url = await getAssetUrl(papers.currentId, rel);
+      const url = await getAssetUrl(paperId, rel);
       if (url) imgCache.set(rel, url);
     }
+    if (seq !== streamRenderSeq || papers.currentId !== paperId) return;
     if (imgCache.has(rel)) img.src = imgCache.get(rel);
     img.loading = 'lazy';
   }));
 }
 
 watch(streamText, (text) => {
-  scheduleStreamRender(text);
+  if (generating.value) scheduleStreamRender(text, papers.currentId);
 });
 
 watch(() => papers.currentId, () => {
@@ -194,26 +201,23 @@ onUnmounted(() => {
 // 预览时用 renderMarkdown 替换图片路径
 watch([mode, noteText], async ([m]) => {
   if (m !== 'preview' || !papers.currentId) return;
+  const renderFor = papers.currentId;
   await nextTick();
-  if (previewEl.value) {
-    await renderMarkdown(previewEl.value, noteText.value, papers.currentId);
+  if (previewEl.value && papers.currentId === renderFor) {
+    await renderMarkdown(previewEl.value, noteText.value, renderFor);
+    if (papers.currentId !== renderFor) return;
     outline.value = extractOutline();
-  }
-});
-watch(() => papers.noteGenerating, async (val) => {
-  if (!val && papers.noteResult !== null) {
-    const { paperId, text } = papers.noteResult;
-    papers.noteResult = null;
-    if (papers.currentId === paperId) {
-      noteText.value = text;
-      mode.value = 'preview';
-      statusText.value = '生成完成，可继续编辑';
-    }
   }
 });
 
 async function generate() {
-  if (!papers.currentId || !papers.currentMd) {
+  const generatingFor = papers.currentId;
+  if (!generatingFor) {
+    toast('请先选择一篇已解析完成的论文', 'error');
+    return;
+  }
+  const paperMd = await store.loadMarkdown(generatingFor).catch(() => null);
+  if (!paperMd) {
     toast('请先选择一篇已解析完成的论文', 'error');
     return;
   }
@@ -234,29 +238,29 @@ async function generate() {
 ${template}
 
 论文内容（Markdown 格式）：
-${papers.currentMd}`;
+${paperMd}`;
 
-  const generatingFor = papers.currentId; // 记录为哪篇生成
-  papers.noteGenerating = true;
-  papers.noteGeneratingFor = generatingFor;
-  papers.noteStream = '';
+  papers.beginNoteGeneration(generatingFor);
   statusText.value = '正在生成...';
+  mode.value = 'preview';
 
   try {
     const result = await agent.chat([], prompt, [], (chunk) => {
-      papers.noteStream += chunk;
+      papers.appendNoteStream(generatingFor, chunk);
     });
-    papers.noteResult = { paperId: generatingFor, text: result };
     await store.saveNote(generatingFor, result);
+    papers.finishNoteGeneration(generatingFor);
+    if (papers.currentId === generatingFor) {
+      noteText.value = result;
+      mode.value = 'preview';
+      statusText.value = '生成完成，可继续编辑';
+    }
   } catch (e) {
+    papers.failNoteGeneration(generatingFor, e.message);
     if (papers.currentId === generatingFor) {
       statusText.value = '生成失败：' + e.message;
       toast('生成失败：' + e.message, 'error');
     }
-  } finally {
-    papers.noteGenerating = false;
-    papers.noteGeneratingFor = null;
-    papers.noteStream = '';
   }
 }
 

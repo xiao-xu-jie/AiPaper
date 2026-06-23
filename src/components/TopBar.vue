@@ -8,6 +8,7 @@
     <button class="btn secondary" @click="showMinerUConfig = true">⚙️ MinerU</button>
     <button class="btn secondary" @click="showAIConfig = true">🤖 AI 模型</button>
     <button class="btn secondary" @click="showTagManager = true">🏷 标签管理</button>
+    <button class="btn secondary" @click="showExtensions = true">🧩 扩展</button>
     <button class="btn secondary" @click="showHelp = true">❓ 帮助</button>
     <button v-if="isElectron" class="btn secondary" @click="handleCheckUpdate">🔄 检查更新</button>
     <button v-if="!isElectron" class="btn secondary" @click="goToDownload">📥 下载客户端</button>
@@ -16,6 +17,7 @@
 
   <MinerUConfigDialog v-model="showMinerUConfig" @pickDir="$emit('pickDir')" />
   <AIConfigDialog v-model="showAIConfig" />
+  <ExtensionsDialog v-model="showExtensions" />
 
   <Teleport to="body">
     <div v-if="showTagManager" class="tag-manager-overlay" @click="showTagManager = false">
@@ -156,6 +158,7 @@
 import { ref, computed, onMounted, inject } from 'vue';
 import MinerUConfigDialog from './MinerUConfigDialog.vue';
 import AIConfigDialog from './AIConfigDialog.vue';
+import ExtensionsDialog from './ExtensionsDialog.vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useTagsStore, normalizeTagName } from '../stores/tags.js';
 import * as store from '../lib/store.js';
@@ -164,6 +167,7 @@ defineEmits(['upload', 'pickDir']);
 const showHelp = ref(false);
 const showMinerUConfig = ref(false);
 const showAIConfig = ref(false);
+const showExtensions = ref(false);
 const showTagManager = ref(false);
 const tagSearch = ref('');
 const tagDraft = ref('');

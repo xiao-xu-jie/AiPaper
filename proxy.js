@@ -39,6 +39,14 @@ function setCors(res) {
   );
 }
 
+function sanitizeProxyHeaders(headers) {
+  const next = { ...headers };
+  for (const key of Object.keys(next)) {
+    if (key.toLowerCase().startsWith("access-control-")) delete next[key];
+  }
+  return next;
+}
+
 // 转发请求到目标 URL，补 CORS。
 // 关键点：
 //  1) 只转发干净的必要头。浏览器特有头（sec-*、origin、referer、
@@ -66,8 +74,8 @@ function handleProxy(req, res, target) {
     const ctype = (req.headers["content-type"] || "").toLowerCase();
     const headers = { host: u.host };
     if (body.length) headers["content-length"] = body.length;
-    // 仅对 JSON（MinerU API）转发 content-type；OSS 上传必须不带
-    if (ctype.includes("application/json"))
+    // 仅对 JSON 和 multipart 转发 content-type；OSS 直传必须不带
+    if (ctype.includes("application/json") || ctype.includes("multipart/form-data"))
       headers["content-type"] = req.headers["content-type"];
     if (req.headers.authorization)
       headers.authorization = req.headers.authorization;
@@ -77,7 +85,7 @@ function handleProxy(req, res, target) {
       { method: req.method, headers },
       (proxyRes) => {
         setCors(res);
-        res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+        res.writeHead(proxyRes.statusCode || 502, sanitizeProxyHeaders(proxyRes.headers));
         proxyRes.on("error", () => res.end());
         proxyRes.pipe(res);
       },

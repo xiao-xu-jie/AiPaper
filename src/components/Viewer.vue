@@ -105,6 +105,7 @@ import { renderMarkdown, parseMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import * as agent from '../lib/agent.js';
 import NotesView from './NotesView.vue';
+import JSZip from 'jszip';
 
 const papers = usePapersStore();
 const cfg = useConfigStore();
@@ -138,8 +139,7 @@ function sanitizeFileName(name) {
   return String(name || '').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || '论文';
 }
 
-function downloadBlob(filename, text) {
-  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+function downloadBlob(filename, blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -150,14 +150,43 @@ function downloadBlob(filename, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function extractLocalImageRefs(markdown) {
+  const refs = new Set();
+  const pattern = /!\[[^\]]*\]\(([^)]+)\)/g;
+  let m;
+  while ((m = pattern.exec(markdown))) {
+    const src = m[1].trim();
+    if (/^(https?:|data:|blob:)/i.test(src)) continue;
+    refs.add(src.replace(/^\.?\//, ''));
+  }
+  return refs;
+}
+
+async function packMarkdownZip(paperId, markdown, mdFileName) {
+  const zip = new JSZip();
+  zip.file(mdFileName, markdown);
+  const refs = extractLocalImageRefs(markdown);
+  const assets = await store.listPaperAssets(paperId);
+  const filtered = refs.size
+    ? assets.filter((a) => refs.has(a.path) || refs.has(`./${a.path}`))
+    : assets;
+  for (const { path, file } of filtered) {
+    zip.file(path, file);
+  }
+  return zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+}
+
 async function downloadMarkdown() {
   const p = paper.value;
   if (!p) return;
   try {
     const md = await store.loadMarkdown(p.id);
     if (!md?.trim()) { toast('该论文还没有 Markdown 内容', 'error'); return; }
-    downloadBlob(`${sanitizeFileName(p.remark || p.title || p.fileName)}.md`, md);
-    toast('Markdown 已下载', 'success');
+    const name = sanitizeFileName(p.remark || p.title || p.fileName);
+    toast('正在打包...', 'info');
+    const blob = await packMarkdownZip(p.id, md, `${name}.md`);
+    downloadBlob(`${name}.zip`, blob);
+    toast('Markdown 已下载（含图片）', 'success');
   } catch (e) {
     toast('下载失败：' + (e?.message || e), 'error');
   }
@@ -169,8 +198,11 @@ async function downloadNote() {
   try {
     const note = await store.loadNote(p.id);
     if (!note?.trim()) { toast('该论文还没有阅读笔记', 'error'); return; }
-    downloadBlob(`${sanitizeFileName(p.remark || p.title || p.fileName)} - 阅读笔记.md`, note);
-    toast('阅读笔记已下载', 'success');
+    const name = sanitizeFileName(p.remark || p.title || p.fileName);
+    toast('正在打包...', 'info');
+    const blob = await packMarkdownZip(p.id, note, `${name} - 阅读笔记.md`);
+    downloadBlob(`${name} - 阅读笔记.zip`, blob);
+    toast('阅读笔记已下载（含图片）', 'success');
   } catch (e) {
     toast('下载失败：' + (e?.message || e), 'error');
   }

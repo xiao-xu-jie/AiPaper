@@ -190,6 +190,32 @@ export async function loadAssetBlob(paperId, relPath) {
   return fh.getFile();
 }
 
+// 递归列出论文目录下的所有资源（图片等），排除 meta/md/笔记等顶层文件
+export async function listPaperAssets(paperId) {
+  const dir = await getPaperDir(paperId);
+  const SKIP_TOP = new Set([
+    'meta.json', 'full.md', 'note.md', 'original.pdf',
+    'translations.json', 'annotations.json', 'chats',
+  ]);
+  const out = [];
+  async function walk(handle, prefix) {
+    for await (const [name, child] of handle.entries()) {
+      if (prefix === '' && SKIP_TOP.has(name)) continue;
+      const rel = prefix ? `${prefix}/${name}` : name;
+      if (child.kind === 'directory') {
+        await walk(child, rel);
+      } else {
+        try {
+          const file = await child.getFile();
+          out.push({ path: rel, file });
+        } catch { /* 跳过无权限文件 */ }
+      }
+    }
+  }
+  await walk(dir, '');
+  return out;
+}
+
 // 列出所有历史论文（读取每个子目录的 meta.json）
 export async function listPapers() {
   assertRoot();

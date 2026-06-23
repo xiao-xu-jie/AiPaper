@@ -289,6 +289,8 @@ const tagInput = ref(null);
 const aiTagging = ref(false);
 const aiTagDraft = ref('');
 const siyuanUploading = ref(false);
+const dragState = ref(null);
+provide('dragState', dragState);
 const aiTagPanel = ref({
   show: false,
   paperId: '',

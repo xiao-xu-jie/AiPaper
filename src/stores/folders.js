@@ -87,6 +87,41 @@ export const useFoldersStore = defineStore('folders', {
       await this._persist();
     },
 
+    // 判断目录是否为另一目录的祖先（避免拖入自身或子目录形成环）
+    isAncestor(ancestorId, descendantId) {
+      let cur = this.getParentFolder(descendantId);
+      while (cur) {
+        if (cur === ancestorId) return true;
+        cur = this.getParentFolder(cur);
+      }
+      return false;
+    },
+
+    getParentFolder(id) {
+      for (const [pid, folder] of Object.entries(this.tree)) {
+        if ((folder.children || []).includes(id)) return pid;
+      }
+      return null;
+    },
+
+    async moveFolder(folderId, targetParentId) {
+      if (!this.tree[folderId] || folderId === 'root') return false;
+      if (!this.tree[targetParentId]) return false;
+      if (folderId === targetParentId) return false;
+      if (this.isAncestor(folderId, targetParentId)) return false;
+      const oldParent = this.getParentFolder(folderId);
+      if (oldParent === targetParentId) return false;
+      if (oldParent) {
+        this.tree[oldParent].children = this.tree[oldParent].children.filter((c) => c !== folderId);
+      }
+      if (!this.tree[targetParentId].children.includes(folderId)) {
+        this.tree[targetParentId].children.push(folderId);
+      }
+      this.expanded[targetParentId] = true;
+      await this._persist();
+      return true;
+    },
+
     async addPaper(paperId, folderId) {
       const target = folderId || this.activeFolderId || 'root';
       if (!this.tree[target]) return;

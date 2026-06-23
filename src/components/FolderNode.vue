@@ -2,10 +2,17 @@
   <div v-if="visible">
     <div
       class="folder-row"
-      :class="{ active: folders.activeFolderId === nodeId }"
+      :class="{ active: folders.activeFolderId === nodeId, 'drop-target': isDropOver, dragging: isDraggingSelf }"
       :style="{ paddingLeft: depth * 14 + 8 + 'px' }"
+      :draggable="nodeId !== 'root'"
       @click="toggle"
       @contextmenu.prevent="openCtx($event, nodeId, 'folder')"
+      @dragstart="onFolderDragStart($event)"
+      @dragend="onDragEnd"
+      @dragenter.prevent="onDragEnter($event)"
+      @dragover.prevent="onDragOver($event)"
+      @dragleave="onDragLeave($event)"
+      @drop.prevent="onDrop($event)"
     >
       <span class="fold-icon">{{ expanded ? '▾' : '▸' }}</span>
       <span class="folder-icon">📁</span>
@@ -24,10 +31,13 @@
         v-for="p in nodePapers"
         :key="p.id"
         class="paper-item"
-        :class="{ active: p.id === papers.currentId }"
+        :class="{ active: p.id === papers.currentId, dragging: draggingPaperId === p.id }"
         :style="{ paddingLeft: (depth + 1) * 14 + 12 + 'px' }"
+        :draggable="true"
         @click="papers.open(p.id)"
         @contextmenu.prevent="openCtx($event, p.id, 'paper')"
+        @dragstart="onPaperDragStart($event, p.id)"
+        @dragend="onDragEnd"
       >
         <span class="paper-icon">📄</span>
         <div class="pi-info">
@@ -65,7 +75,7 @@
 </template>
 
 <script setup>
-import { computed, inject } from 'vue';
+import { computed, inject, ref } from 'vue';
 
 const props = defineProps({ nodeId: String, depth: { type: Number, default: 0 } });
 
@@ -76,6 +86,8 @@ const tags = inject('tags');
 const paperSearchText = inject('paperSearchText');
 const paperMatchesFilters = inject('paperMatchesFilters');
 const injectedFormatUploadTime = inject('formatUploadTime', null);
+const toast = inject('toast', () => {});
+const dragState = inject('dragState');
 
 const node = computed(() => folders.tree[props.nodeId] || { children: [], papers: [] });
 const expanded = computed(() => !!folders.expanded[props.nodeId]);
@@ -83,9 +95,77 @@ const searchQuery = computed(() => (paperSearchText?.value || '').trim().toLower
 const activeTagKeys = computed(() => new Set((tags?.activeTagNames || []).map((tag) => tag.toLowerCase())));
 const filtering = computed(() => !!searchQuery.value || activeTagKeys.value.size > 0);
 
+const isDropOver = ref(false);
+const draggingPaperId = computed(() => (dragState?.value?.kind === 'paper' ? dragState.value.id : null));
+const isDraggingSelf = computed(() => dragState?.value?.kind === 'folder' && dragState.value.id === props.nodeId);
+
 function toggle() {
   folders.activeFolderId = props.nodeId;
   folders.toggle(props.nodeId);
+}
+
+function onPaperDragStart(e, paperId) {
+  if (dragState) dragState.value = { kind: 'paper', id: paperId };
+  e.dataTransfer.effectAllowed = 'move';
+  // 必须 setData 才能在某些浏览器中触发 drop 事件
+  e.dataTransfer.setData('text/aipaper', `paper:${paperId}`);
+}
+
+function onFolderDragStart(e) {
+  if (props.nodeId === 'root') { e.preventDefault(); return; }
+  if (dragState) dragState.value = { kind: 'folder', id: props.nodeId };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/aipaper', `folder:${props.nodeId}`);
+  e.stopPropagation();
+}
+
+function onDragEnd() {
+  if (dragState) dragState.value = null;
+  isDropOver.value = false;
+}
+
+function canAccept(state) {
+  if (!state) return false;
+  if (state.kind === 'paper') return true;
+  if (state.kind === 'folder') {
+    if (state.id === props.nodeId) return false;
+    if (folders.isAncestor(state.id, props.nodeId)) return false;
+    if (folders.getParentFolder(state.id) === props.nodeId) return false;
+    return true;
+  }
+  return false;
+}
+
+function onDragEnter(e) {
+  if (!canAccept(dragState?.value)) return;
+  isDropOver.value = true;
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function onDragOver(e) {
+  if (!canAccept(dragState?.value)) return;
+  e.dataTransfer.dropEffect = 'move';
+  isDropOver.value = true;
+}
+
+function onDragLeave(e) {
+  // 仅当鼠标真正离开此 row（不是进入子元素）才清除
+  if (!e.currentTarget.contains(e.relatedTarget)) isDropOver.value = false;
+}
+
+async function onDrop() {
+  const state = dragState?.value;
+  isDropOver.value = false;
+  if (!canAccept(state)) return;
+  if (state.kind === 'paper') {
+    await folders.movePaper(state.id, props.nodeId);
+    toast(`已移动到「${node.value.name}」`, 'success');
+  } else if (state.kind === 'folder') {
+    const ok = await folders.moveFolder(state.id, props.nodeId);
+    if (ok) toast(`目录已移动到「${node.value.name}」`, 'success');
+    else toast('无法移动到目标目录', 'error');
+  }
+  if (dragState) dragState.value = null;
 }
 
 function displayTitle(p) {
@@ -171,6 +251,15 @@ const badgeLabel = (p) => (p.stateText && p.state !== 'done' ? p.stateText : (ST
 }
 .folder-row:hover { background: #f0f1f3; }
 .folder-row.active { background: #eef1ff; }
+.folder-row.drop-target {
+  background: #e0e7ff;
+  outline: 2px dashed var(--primary);
+  outline-offset: -2px;
+}
+.folder-row.dragging,
+.paper-item.dragging {
+  opacity: 0.4;
+}
 .fold-icon {
   font-size: 10px;
   color: var(--muted);

@@ -26,11 +26,13 @@
     </div>
   </div>
 
-  <main v-if="dirReady" class="main" @dragover.prevent @dragenter.prevent="dropOver = true" @dragleave="dropOver = false" @drop.prevent="onDrop">
+  <main v-if="dirReady" class="main" @dragover.prevent="onDragOver" @dragenter.prevent="onDragEnter" @dragleave="onDragLeave" @drop.prevent="onDrop">
     <Sidebar />
     <Viewer :key="papers.currentId" @toggleChat="toggleChat" @askImage="onAskImage" @askText="onAskText" />
     <ChatPanel v-if="chatOpen" ref="chatPanelRef" @close="chatOpen = false" />
-    <div v-if="dropOver" class="drop-zone over" />
+    <div v-if="dropOver" class="drop-zone over">
+      <div class="drop-hint">松开鼠标上传 PDF</div>
+    </div>
   </main>
 
   <SessionPicker v-if="chatStore.showPicker" />
@@ -131,10 +133,37 @@ async function onFileInput(e) {
   } catch (e) { toast('失败：' + e.message, 'error'); }
 }
 
+function hasExternalFiles(e) {
+  // 只在拖入外部文件时高亮提示，过滤掉应用内的拖动
+  const types = e.dataTransfer?.types;
+  if (!types) return false;
+  // DataTransferItemList.types 是字符串数组（FF）或 DOMStringList（Chrome）
+  for (let i = 0; i < types.length; i++) {
+    if (types[i] === 'Files') return true;
+  }
+  return false;
+}
+
+function onDragEnter(e) {
+  if (!hasExternalFiles(e)) return;
+  dropOver.value = true;
+}
+
+function onDragOver(e) {
+  if (hasExternalFiles(e)) e.dataTransfer.dropEffect = 'copy';
+}
+
+function onDragLeave(e) {
+  // 防止子元素触发的 leave 闪烁：只有真正离开 main 时才清除
+  if (e.currentTarget === e.target) dropOver.value = false;
+}
+
 function onDrop(e) {
   dropOver.value = false;
   const files = [...(e.dataTransfer?.files || [])].filter((f) => /\.pdf$/i.test(f.name));
-  if (files.length) onFileInput({ target: { files }, value: '' });
+  if (!files.length) return;
+  if (!cfg.token) { toast('请先配置 MinerU Token', 'error'); return; }
+  onFileInput({ target: { files }, value: '' });
 }
 
 const chatPanelRef = ref(null);
@@ -211,7 +240,8 @@ watch(() => papers.currentMd, (md) => { agentLib.setContext(md || ''); });
 .nd-card .hint { margin-top: 16px; font-size: 13px; color: var(--muted); }
 .restore-bar { display: flex; align-items: center; gap: 12px; padding: 10px 20px; background: #fff7e6; border-bottom: 1px solid #ffe8b3; font-size: 14px; flex-shrink: 0; }
 .drop-zone { position: absolute; inset: 0; pointer-events: none; }
-.drop-zone.over { pointer-events: all; background: rgba(59,91,219,.08); border: 3px dashed var(--primary); z-index: 50; }
+.drop-zone.over { pointer-events: all; background: rgba(59,91,219,.08); border: 3px dashed var(--primary); z-index: 50; display: flex; align-items: center; justify-content: center; }
+.drop-hint { background: rgba(255,255,255,.95); color: var(--primary); padding: 16px 32px; border-radius: 12px; font-size: 18px; font-weight: 600; box-shadow: 0 4px 20px rgba(59,91,219,.25); }
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .overlay-card { background: #fff; padding: 32px 40px; border-radius: 12px; max-width: 420px; }
 .overlay-card h2 { margin-bottom: 12px; }

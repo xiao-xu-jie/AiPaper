@@ -106,11 +106,41 @@
         <div v-if="fetchError" class="fetch-error">{{ fetchError }}</div>
       </div>
     </div>
+
+    <div v-if="showCustomModel" class="dialog-overlay" @click="cancelCustomModel">
+      <div class="custom-model-modal" @click.stop>
+        <h3>添加自定义模型</h3>
+        <p class="hint">输入模型 ID（如 gpt-4o、claude-sonnet-4-6）</p>
+        <input
+          ref="customModelInput"
+          v-model="customModelDraft"
+          type="text"
+          placeholder="模型 ID"
+          @keydown.enter="confirmCustomModel"
+          @keydown.esc="cancelCustomModel"
+        />
+        <div class="custom-model-actions">
+          <button class="btn small" @click="cancelCustomModel">取消</button>
+          <button class="btn small primary" :disabled="!customModelDraft.trim()" @click="confirmCustomModel">添加</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="confirmRemove" class="dialog-overlay" @click="confirmRemove = false">
+      <div class="custom-model-modal" @click.stop>
+        <h3>删除提供商</h3>
+        <p class="hint">确认删除提供商「{{ cfg.currentProvider?.name }}」？此操作不可恢复。</p>
+        <div class="custom-model-actions">
+          <button class="btn small" @click="confirmRemove = false">取消</button>
+          <button class="btn small btn-danger" @click="doRemoveProvider">删除</button>
+        </div>
+      </div>
+    </div>
   </Teleport>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, nextTick } from 'vue';
 import { useConfigStore } from '../stores/config.js';
 
 const props = defineProps({ modelValue: Boolean });
@@ -121,6 +151,10 @@ const showProviderDetail = ref(false);
 const showAddProvider = ref(false);
 const showTemplate = ref(false);
 const dirty = ref(false);
+const showCustomModel = ref(false);
+const customModelDraft = ref('');
+const customModelInput = ref(null);
+const confirmRemove = ref(false);
 
 const newProvider = ref({ name: '', baseUrl: '', apiKey: '' });
 const fetching = ref(false);
@@ -187,15 +221,33 @@ function confirmAddProvider() {
 
 function removeCurrentProvider() {
   if (!cfg.currentProvider) return;
-  if (!confirm(`确认删除提供商「${cfg.currentProvider.name}」？`)) return;
+  confirmRemove.value = true;
+}
+
+function doRemoveProvider() {
+  if (!cfg.currentProvider) return;
   cfg.removeProvider(cfg.currentProviderId);
   showProviderDetail.value = false;
+  confirmRemove.value = false;
 }
 
 function addCustomModel() {
-  const modelId = prompt('输入自定义模型 ID（如 gpt-4o）：');
-  if (!modelId || !modelId.trim()) return;
-  cfg.addCustomModel(cfg.currentProviderId, modelId.trim());
+  customModelDraft.value = '';
+  showCustomModel.value = true;
+  nextTick(() => customModelInput.value?.focus());
+}
+
+function cancelCustomModel() {
+  showCustomModel.value = false;
+  customModelDraft.value = '';
+}
+
+function confirmCustomModel() {
+  const modelId = customModelDraft.value.trim();
+  if (!modelId) return;
+  cfg.addCustomModel(cfg.currentProviderId, modelId);
+  cfg.aiModel = modelId;
+  cancelCustomModel();
 }
 
 function save() {
@@ -305,4 +357,34 @@ input[readonly] { background: #f5f5f5; color: var(--muted); }
   flex-shrink: 0;
 }
 .fetch-error { padding: 0 24px 16px; font-size: 12px; color: var(--red); }
+.custom-model-modal {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+  width: min(380px, 92vw);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.custom-model-modal h3 { margin: 0; font-size: 16px; }
+.custom-model-modal .hint { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.custom-model-modal input {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 14px;
+  outline: none;
+}
+.custom-model-modal input:focus { border-color: var(--primary); }
+.custom-model-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.btn.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 </style>

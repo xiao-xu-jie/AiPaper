@@ -238,6 +238,7 @@
         <button @click="startTagDialog(ctx.id)">编辑标签</button>
         <button :disabled="aiTagging" @click="generateTags(ctx.id)">AI 生成标签</button>
         <button @click="showMoveMenu = true">移动到目录</button>
+        <button :disabled="siyuanUploading" @click="uploadNoteToSiyuan(ctx.id)">{{ siyuanUploading ? '上传中...' : '上传笔记到思源' }}</button>
         <button class="danger" @click="delPaper(ctx.id)">删除论文</button>
       </template>
     </div>
@@ -258,6 +259,7 @@ import { useConfigStore } from '../stores/config.js';
 import FolderNode from './FolderNode.vue';
 import * as store from '../lib/store.js';
 import * as agent from '../lib/agent.js';
+import * as siyuan from '../lib/siyuan.js';
 
 const papers = usePapersStore();
 const folders = useFoldersStore();
@@ -286,6 +288,7 @@ const tagDraftTags = ref([]);
 const tagInput = ref(null);
 const aiTagging = ref(false);
 const aiTagDraft = ref('');
+const siyuanUploading = ref(false);
 const aiTagPanel = ref({
   show: false,
   paperId: '',
@@ -650,6 +653,49 @@ async function commitAiTags() {
   await papers.updateTags(paper.id, merged);
   closeAiTagPanel();
   toast('AI 标签已保存', 'success');
+}
+
+async function uploadNoteToSiyuan(id) {
+  ctx.value.show = false;
+  if (siyuanUploading.value) return;
+  const paper = paperById(id);
+  if (!paper) return;
+
+  const config = siyuan.loadConfig();
+  if (!config.endpoint || !config.token || !config.notebook) {
+    toast('请先在「🧩 扩展」中配置思源连接和笔记本', 'error');
+    return;
+  }
+
+  siyuanUploading.value = true;
+  try {
+    const note = await store.loadNote(id);
+    if (!note?.trim()) {
+      toast('该论文还没有阅读笔记', 'error');
+      return;
+    }
+    const title = siyuan.sanitizeTitle(paper.remark || paper.title || paper.fileName || '阅读笔记');
+    const basePath = siyuan.normalizeDocPath(config.defaultPath || '/AI Paper');
+    const docPath = `${basePath}/${title}`;
+    const metadata = siyuan.buildDefaultMetadata(paper);
+    toast('正在上传到思源...', 'info');
+    const docId = await siyuan.uploadPaperNote({
+      config,
+      notebook: config.notebook,
+      docPath,
+      title,
+      markdown: note,
+      paperId: id,
+      metadata,
+      loadBlob: store.loadAssetBlob,
+    });
+    siyuan.saveConfig({ ...config, defaultPath: siyuan.parentDocPath(docPath) });
+    toast(`上传成功：${docId}`, 'success');
+  } catch (e) {
+    toast('上传失败：' + (e?.message || e), 'error');
+  } finally {
+    siyuanUploading.value = false;
+  }
 }
 
 provide('openCtx', openCtx);

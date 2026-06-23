@@ -109,3 +109,95 @@ export async function uploadAsset(config, assetsDirPath, file) {
   }
   return data?.data?.succMap?.[file.name] || null;
 }
+
+export function sanitizeTitle(title) {
+  return String(title || '阅读笔记').replace(/[\\/:*?"<>|#\[\]]/g, ' ').replace(/\s+/g, ' ').trim() || '阅读笔记';
+}
+
+export function buildDefaultMetadata(paper) {
+  if (!paper) return [];
+  return [
+    { key: 'paper-id', value: paper.id || '' },
+    { key: 'paper-title', value: paper.title || '' },
+    { key: 'paper-tags', value: (paper.tags || []).join(', ') },
+    { key: 'uploaded-at', value: paper.uploadedAt ? new Date(paper.uploadedAt).toISOString() : '' },
+  ].filter((row) => row.value);
+}
+
+export function buildAttrs(metadata = []) {
+  const attrs = {
+    'custom-aipaper-synced-at': new Date().toISOString(),
+  };
+  for (const row of metadata) {
+    const key = String(row?.key || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '');
+    const value = String(row?.value || '').trim();
+    if (!key || !value) continue;
+    attrs[`custom-aipaper-${key}`] = value;
+  }
+  return attrs;
+}
+
+export function parentDocPath(path) {
+  const normalized = normalizeDocPath(path);
+  const parts = normalized.split('/').filter(Boolean);
+  parts.pop();
+  return parts.length ? `/${parts.join('/')}` : '/AI Paper';
+}
+
+// 将笔记中的本地图片上传到思源资源目录，并重写引用
+export async function rewriteNoteAssets(markdown, paperId, config, loadBlob) {
+  const imagePattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
+  const replacements = new Map();
+  const matches = [...markdown.matchAll(imagePattern)];
+  for (const match of matches) {
+    const src = match[2].trim();
+    if (/^(https?:|data:|blob:|assets\/)/i.test(src) || replacements.has(src)) continue;
+    const rel = src.replace(/^\.?\//, '');
+    try {
+      const file = await loadBlob(paperId, rel);
+      const uploadedPath = await uploadAsset(config, config.assetsDirPath, file);
+      if (uploadedPath) replacements.set(src, uploadedPath);
+    } catch {
+      // 单张图片失败时保留原引用，避免阻断整篇笔记上传
+    }
+  }
+  return markdown.replace(imagePattern, (full, alt, src) => {
+    const next = replacements.get(src.trim());
+    return next ? `![${alt}](${next})` : full;
+  });
+}
+
+/**
+ * 上传一篇论文的阅读笔记到思源
+ * @param {object} options
+ * @param {object} options.config - 思源配置（endpoint/token/notebook/assetsDirPath）
+ * @param {string} options.notebook - 笔记本 ID
+ * @param {string} options.docPath - 思源文档路径
+ * @param {string} options.title - 文档标题
+ * @param {string} options.markdown - Markdown 内容
+ * @param {string} options.paperId - 论文 ID（用于解析本地资源）
+ * @param {Array}  options.metadata - [{key, value}] 元数据
+ * @param {Function} options.loadBlob - (paperId, relPath) => Promise<Blob>
+ * @param {Function} [options.onProgress] - 进度回调
+ * @returns {Promise<string>} 创建的文档 ID
+ */
+export async function uploadPaperNote(options) {
+  const {
+    config, notebook, docPath, title, markdown,
+    paperId, metadata = [], loadBlob, onProgress,
+  } = options;
+  if (!notebook) throw new Error('请先选择思源笔记本');
+  if (!markdown?.trim()) throw new Error('当前论文还没有阅读笔记');
+
+  onProgress?.('上传资源文件...');
+  const rewritten = await rewriteNoteAssets(markdown, paperId, config, loadBlob);
+  const finalMarkdown = `# ${title}\n\n${rewritten}`;
+
+  onProgress?.('创建思源文档...');
+  const docId = await createDocWithMd(config, notebook, docPath, finalMarkdown);
+
+  onProgress?.('写入元数据...');
+  await setBlockAttrs(config, docId, buildAttrs(metadata));
+
+  return docId;
+}

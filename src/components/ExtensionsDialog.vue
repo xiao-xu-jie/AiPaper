@@ -180,20 +180,15 @@ async function loadNotebooks() {
 
 function resetUploadForm() {
   const paper = papers.currentPaper;
-  const title = sanitizeTitle(paper?.remark || paper?.title || paper?.fileName || '阅读笔记');
+  const title = siyuan.sanitizeTitle(paper?.remark || paper?.title || paper?.fileName || '阅读笔记');
   const basePath = siyuan.normalizeDocPath(form.defaultPath || '/AI Paper');
   upload.title = title;
   upload.path = `${basePath}/${title}`;
-  upload.metadata = [
-    { key: 'paper-id', value: paper?.id || '' },
-    { key: 'paper-title', value: paper?.title || '' },
-    { key: 'paper-tags', value: (paper?.tags || []).join(', ') },
-    { key: 'uploaded-at', value: paper?.uploadedAt ? new Date(paper.uploadedAt).toISOString() : '' },
-  ].filter((row) => row.value);
+  upload.metadata = siyuan.buildDefaultMetadata(paper);
 }
 
 function sanitizeTitle(title) {
-  return String(title || '阅读笔记').replace(/[\\/:*?"<>|#\[\]]/g, ' ').replace(/\s+/g, ' ').trim() || '阅读笔记';
+  return siyuan.sanitizeTitle(title);
 }
 
 function addMetaRow() {
@@ -202,19 +197,6 @@ function addMetaRow() {
 
 function removeMetaRow(index) {
   upload.metadata.splice(index, 1);
-}
-
-function buildAttrs(docId) {
-  const attrs = {
-    'custom-aipaper-doc-id': docId,
-    'custom-aipaper-synced-at': new Date().toISOString(),
-  };
-  for (const row of upload.metadata) {
-    const key = row.key.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '');
-    if (!key || !row.value.trim()) continue;
-    attrs[`custom-aipaper-${key}`] = row.value.trim();
-  }
-  return attrs;
 }
 
 async function uploadCurrentNote() {
@@ -232,15 +214,19 @@ async function uploadCurrentNote() {
   try {
     const note = await store.loadNote(papers.currentId);
     if (!note?.trim()) throw new Error('当前论文还没有阅读笔记');
-    status.value = '上传资源文件...';
-    const markdown = await rewriteAssets(note, papers.currentId, config);
     const title = upload.title.trim() || currentPaperTitle.value;
-    const finalMarkdown = `# ${title}\n\n${markdown}`;
-    status.value = '创建思源文档...';
-    const docId = await siyuan.createDocWithMd(config, form.notebook, upload.path, finalMarkdown);
-    status.value = '写入元数据...';
-    await siyuan.setBlockAttrs(config, docId, buildAttrs(docId));
-    siyuan.saveConfig({ ...form, defaultPath: parentPath(upload.path) });
+    const docId = await siyuan.uploadPaperNote({
+      config,
+      notebook: form.notebook,
+      docPath: upload.path,
+      title,
+      markdown: note,
+      paperId: papers.currentId,
+      metadata: upload.metadata,
+      loadBlob: store.loadAssetBlob,
+      onProgress: (text) => { status.value = text; },
+    });
+    siyuan.saveConfig({ ...form, defaultPath: siyuan.parentDocPath(upload.path) });
     status.value = `上传完成：${docId}`;
     toast?.('阅读笔记已上传到思源', 'success');
   } catch (e) {
@@ -249,35 +235,6 @@ async function uploadCurrentNote() {
   } finally {
     uploading.value = false;
   }
-}
-
-async function rewriteAssets(markdown, paperId, config) {
-  const imagePattern = /!\[([^\]]*)\]\(([^)]+)\)/g;
-  const replacements = new Map();
-  const matches = [...markdown.matchAll(imagePattern)];
-  for (const match of matches) {
-    const src = match[2].trim();
-    if (/^(https?:|data:|blob:|assets\/)/i.test(src) || replacements.has(src)) continue;
-    const rel = src.replace(/^\.?\//, '');
-    try {
-      const file = await store.loadAssetBlob(paperId, rel);
-      const uploadedPath = await siyuan.uploadAsset(config, config.assetsDirPath, file);
-      if (uploadedPath) replacements.set(src, uploadedPath);
-    } catch {
-      // 保留原链接，避免单张缺失图片阻断整篇笔记上传。
-    }
-  }
-  return markdown.replace(imagePattern, (full, alt, src) => {
-    const next = replacements.get(src.trim());
-    return next ? `![${alt}](${next})` : full;
-  });
-}
-
-function parentPath(path) {
-  const normalized = siyuan.normalizeDocPath(path);
-  const parts = normalized.split('/').filter(Boolean);
-  parts.pop();
-  return parts.length ? `/${parts.join('/')}` : '/AI Paper';
 }
 </script>
 

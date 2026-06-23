@@ -334,11 +334,12 @@ const badgeLabel = (p) => (p.stateText && p.state !== 'done' ? p.stateText : (ST
   cursor: pointer;
   transition: .1s;
   border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
 }
 .paper-item:hover { background: #f0f1f3; }
 .paper-item.active {
   background: #eef1ff;
-  border-left: 3px solid var(--primary);
+  border-left-color: var(--primary);
 }
 .paper-item.drop-before {
   box-shadow: inset 0 2px 0 0 var(--primary);

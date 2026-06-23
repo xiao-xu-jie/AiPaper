@@ -991,7 +991,11 @@ onMounted(() => {
   border-color: var(--primary);
   background: #f7f8ff;
 }
-.tree-wrap { flex: 1; overflow-y: auto; }
+.tree-wrap {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
 .resizer {
   width: 5px;
   flex-shrink: 0;

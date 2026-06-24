@@ -5,6 +5,7 @@
       <div class="view-tabs">
         <button class="tab" :class="{ active: view === 'md' }" @click="view = 'md'">Markdown</button>
         <button class="tab" :class="{ active: view === 'pdf' }" @click="view = 'pdf'">原文 PDF</button>
+        <button class="tab" :class="{ active: view === 'figures' }" @click="view = 'figures'">图表库</button>
         <button class="tab" :class="{ active: view === 'notes' }" @click="view = 'notes'">
           阅读笔记<span v-if="papers.isNoteGenerating(papers.currentId)" class="tab-badge">●</span>
         </button>
@@ -43,6 +44,11 @@
       <div v-show="view === 'pdf'" class="pdf-wrap">
         <iframe ref="pdfFrame" title="PDF 预览" />
       </div>
+      <FiguresView
+        v-show="view === 'figures'"
+        @askImage="onNotesAskImage"
+        @locateFigure="locateFigureInMarkdown"
+      />
       <NotesView v-show="view === 'notes'" @askImage="onNotesAskImage" @askText="onNotesAskText" />
     </div>
   </section>
@@ -98,12 +104,13 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, onMounted, nextTick, inject } from 'vue';
+import { ref, computed, reactive, onMounted, onBeforeUnmount, nextTick, inject } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
-import { renderMarkdown, parseMarkdown } from '../lib/render.js';
+import { cleanupMarkdownRender, renderMarkdown, parseMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import * as agent from '../lib/agent.js';
+import FiguresView from './FiguresView.vue';
 import NotesView from './NotesView.vue';
 import JSZip from 'jszip';
 
@@ -120,6 +127,7 @@ const showOutline = ref(true);
 const outline = ref([]);
 const translations = ref([]);
 const annotations = ref([]);
+let restoreDecorationsTask = null;
 
 const highlightColors = [
   { id: 'yellow', name: '黄色', bg: '#fff3b0', mark: '#ffd54f' },
@@ -160,6 +168,13 @@ function extractLocalImageRefs(markdown) {
     refs.add(src.replace(/^\.?\//, ''));
   }
   return refs;
+}
+
+function normalizeAssetPath(path) {
+  let text = String(path || '').trim().replace(/^<|>$/g, '');
+  text = text.split(/[?#]/)[0].replace(/\\/g, '/').replace(/^\.?\//, '');
+  try { text = decodeURIComponent(text); } catch { /* keep original */ }
+  return text;
 }
 
 async function packMarkdownZip(paperId, markdown, mdFileName) {
@@ -227,6 +242,47 @@ function scrollToHeading(id) {
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+async function locateFigureInMarkdown(path) {
+  const target = normalizeAssetPath(path);
+  if (!target) return;
+  view.value = 'md';
+  await nextTick();
+  const imgs = [...(mdBox.value?.querySelectorAll('img') || [])];
+  const img = imgs.find((item) => {
+    const src = item.dataset.originalSrc || item.dataset.assetRel || item.getAttribute('src') || '';
+    return normalizeAssetPath(src) === target;
+  });
+  if (!img) {
+    toast('正文中没有找到这张图的位置', 'info');
+    return;
+  }
+  img.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  img.classList.add('figure-locate-flash');
+  setTimeout(() => img.classList.remove('figure-locate-flash'), 1600);
+}
+
+function cancelRestoreDecorations() {
+  if (!restoreDecorationsTask) return;
+  if (restoreDecorationsTask.type === 'idle') cancelIdleCallback(restoreDecorationsTask.id);
+  else cancelAnimationFrame(restoreDecorationsTask.id);
+  restoreDecorationsTask = null;
+}
+
+function scheduleRestoreDecorations(paperId) {
+  cancelRestoreDecorations();
+  const run = () => {
+    restoreDecorationsTask = null;
+    if (papers.currentId !== paperId || !mdBox.value) return;
+    restoreTranslationBlocks();
+    restoreAnnotations();
+  };
+  if (typeof requestIdleCallback === 'function') {
+    restoreDecorationsTask = { type: 'idle', id: requestIdleCallback(run, { timeout: 1000 }) };
+  } else {
+    restoreDecorationsTask = { type: 'frame', id: requestAnimationFrame(run) };
+  }
+}
+
 // 组件挂载时（key变化后重建）直接加载当前论文
 onMounted(async () => {
   const id = papers.currentId;
@@ -237,14 +293,18 @@ onMounted(async () => {
     mdBox.value.addEventListener('click', onImageClick);
     outline.value = extractOutline();
     translations.value = await store.loadTranslations(id).catch(() => []);
-    restoreTranslationBlocks();
     annotations.value = await store.loadAnnotations(id).catch(() => []);
-    restoreAnnotations();
+    scheduleRestoreDecorations(id);
   }
   if (pdfFrame.value) {
     const url = await store.getPdfUrl(id).catch(() => null);
     pdfFrame.value.src = url || 'about:blank';
   }
+});
+
+onBeforeUnmount(() => {
+  cancelRestoreDecorations();
+  cleanupMarkdownRender(mdBox.value);
 });
 
 function onHover(e) {
@@ -368,12 +428,13 @@ async function translateSelection() {
   const prompt = `请将以下内容翻译为中文，保持学术准确性，保留专业术语和公式符号，只输出译文不要解释：\n\n${selectedText}`;
   try {
     let result = '';
-    await agent.chat([], prompt, [], (chunk) => {
+    const reply = await agent.chat([], prompt, [], (chunk) => {
       result += chunk;
       renderTranslationBody(block, result + '<span class="cursor">▌</span>');
     });
-    trans.translation = result;
-    renderTranslationBody(block, result);
+    const finalText = result || (typeof reply === 'string' ? reply : reply.content);
+    trans.translation = finalText;
+    renderTranslationBody(block, finalText);
     translations.value.push(trans);
     await store.saveTranslations(papers.currentId, translations.value);
   } catch (e) {
@@ -825,6 +886,10 @@ function onNotesAskText(text) {
 .md-view .placeholder.error { color: var(--red); }
 .md-view :deep(img) { cursor: pointer; transition: opacity .2s; }
 .md-view :deep(img:hover) { opacity: 0.85; }
+.md-view :deep(img.figure-locate-flash) {
+  box-shadow: 0 0 0 4px rgba(47, 111, 237, .35);
+  border-radius: 6px;
+}
 .md-view :deep(.hover-block) {
   background: #f0f4f8;
   border-radius: 4px;

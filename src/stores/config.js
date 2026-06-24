@@ -167,12 +167,353 @@ const DEFAULT_NOTE_TEMPLATE = `# 论文阅读笔记：{{title}}
 #### 框架总览（用自己的话重画）
 `;
 
+const DEFAULT_NOTE_PROMPT = '生成一份结构完整、信息密度高的论文阅读笔记；优先提取论文原文中的事实，不确定的内容请标注“待确认”。';
+
+const BUILTIN_NOTE_TEMPLATES = [
+  {
+    id: 'quick-reading',
+    name: '快速阅读模板',
+    description: '适合 10-20 分钟判断论文是否值得精读。',
+    prompt: '重点输出研究问题、核心方法、主要结论、是否值得继续读，保持简洁可扫读。',
+    content: `# 快速阅读：{{title}}
+
+> 日期：{{date}}
+> 文件：{{fileName}}
+
+## 1. 一句话结论
+- 这篇论文主要解决：
+- 最重要的想法：
+- 我是否需要继续精读：
+
+## 2. 速览卡
+| 维度 | 内容 |
+|---|---|
+| 领域 / 任务 |  |
+| 核心方法 |  |
+| 关键结果 |  |
+| 代码 / 数据 |  |
+| 适用场景 |  |
+| 风险或不足 |  |
+
+## 3. 关键图表
+- Fig. X：
+- Table X：
+
+## 4. 可复用点
+- 可借鉴的方法：
+- 可借鉴的实验：
+- 可引用的观点：
+
+## 5. 下一步
+- [ ] 精读方法
+- [ ] 检查实验细节
+- [ ] 找相关代码或数据
+`,
+  },
+  {
+    id: 'deep-reading',
+    name: '精读模板',
+    description: '适合系统拆解背景、方法、实验和个人评价。',
+    prompt: DEFAULT_NOTE_PROMPT,
+    content: DEFAULT_NOTE_TEMPLATE,
+  },
+  {
+    id: 'survey',
+    name: '综述模板',
+    description: '适合把论文放进领域脉络中比较。',
+    prompt: '按综述视角组织内容，突出问题谱系、方法分类、代表工作、优缺点对比和未来趋势。',
+    content: `# 综述笔记：{{title}}
+
+> 日期：{{date}}
+> 主题标签：{{tags}}
+
+## 1. 论文定位
+- 所属领域：
+- 研究对象：
+- 与已有方向的关系：
+- 适合放入综述的章节：
+
+## 2. 问题脉络
+| 问题 | 代表方法 | 本文位置 |
+|---|---|---|
+|  |  |  |
+
+## 3. 方法分类
+### 3.1 本文方法类别
+- 分类依据：
+- 关键假设：
+- 与同类方法差异：
+
+### 3.2 可比较工作
+| 工作 | 方法思路 | 优点 | 局限 | 与本文关系 |
+|---|---|---|---|---|
+|  |  |  |  |  |
+
+## 4. 证据与结论
+- 作者用哪些实验支撑结论：
+- 哪些证据最强：
+- 哪些证据仍不足：
+
+## 5. 综述可用表述
+- 可引用的一句话：
+- 可归纳的趋势：
+- 可提出的开放问题：
+`,
+  },
+  {
+    id: 'reproduce-experiment',
+    name: '复现实验模板',
+    description: '适合记录复现实验所需条件、步骤和风险。',
+    prompt: '从复现实验角度提取信息，优先关注环境、数据、训练/推理流程、指标、超参数和复现风险。',
+    content: `# 复现实验笔记：{{title}}
+
+> 日期：{{date}}
+> 目标：复现核心实验 / 复现关键结果 / 改造到自己的任务
+
+## 1. 复现目标
+- 要复现的表格 / 图：
+- 成功标准：
+- 最小可行复现范围：
+
+## 2. 资源清单
+| 资源 | 状态 | 备注 |
+|---|---|---|
+| 代码仓库 |  |  |
+| 数据集 |  |  |
+| 模型权重 |  |  |
+| 配置文件 |  |  |
+
+## 3. 环境与依赖
+- Python / CUDA / 框架版本：
+- 关键依赖：
+- 硬件需求：
+
+## 4. 实验流程
+1. 数据准备：
+2. 训练或推理：
+3. 评估：
+4. 结果汇总：
+
+## 5. 关键参数
+| 参数 | 论文值 | 计划值 | 影响 |
+|---|---|---|---|
+|  |  |  |  |
+
+## 6. 风险与替代方案
+- 可能卡住的点：
+- 降级复现方案：
+- 需要联系作者的问题：
+`,
+  },
+  {
+    id: 'group-meeting',
+    name: '组会汇报模板',
+    description: '适合整理成 5-15 分钟汇报提纲。',
+    prompt: '生成面向组会汇报的笔记，突出讲述顺序、听众能快速理解的背景、核心图表和讨论问题。',
+    content: `# 组会汇报：{{title}}
+
+> 日期：{{date}}
+> 汇报时长：10 分钟
+
+## 1. 开场
+- 这篇论文解决什么问题：
+- 为什么值得讲：
+- 听众需要先知道的背景：
+
+## 2. 三句话讲清楚
+1. 背景：
+2. 方法：
+3. 结果：
+
+## 3. 汇报结构
+| 页码 | 标题 | 讲述重点 | 配图 |
+|---|---|---|---|
+| 1 | 背景与动机 |  |  |
+| 2 | 方法框架 |  |  |
+| 3 | 实验结果 |  |  |
+| 4 | 评价与讨论 |  |  |
+
+## 4. 必讲图表
+- Fig. X：
+- Table X：
+
+## 5. 讨论问题
+- 我不确定的点：
+- 可以和组内工作结合的点：
+- 值得延伸的问题：
+`,
+  },
+  {
+    id: 'method-breakdown',
+    name: '方法拆解模板',
+    description: '适合把论文方法拆成模块、输入输出和训练目标。',
+    prompt: '专注拆解方法结构，明确每个模块的输入、输出、目标函数、训练方式、推理流程和设计取舍。',
+    content: `# 方法拆解：{{title}}
+
+> 日期：{{date}}
+
+## 1. 方法总览
+- 方法名称：
+- 输入：
+- 输出：
+- 核心假设：
+- 主要创新：
+
+## 2. 模块拆解
+| 模块 | 输入 | 输出 | 作用 | 可替换性 |
+|---|---|---|---|---|
+|  |  |  |  |  |
+
+## 3. 数据流
+1. 数据进入：
+2. 表征构建：
+3. 中间推理：
+4. 结果输出：
+
+## 4. 训练目标
+- Loss / Objective：
+- 监督信号：
+- 负样本或约束：
+- 训练技巧：
+
+## 5. 推理流程
+- 推理步骤：
+- 时间 / 显存复杂度：
+- 部署限制：
+
+## 6. 设计取舍
+- 为什么这样设计：
+- 替代方案是什么：
+- 哪些模块最关键：
+`,
+  },
+  {
+    id: 'code-reproduction-plan',
+    name: '代码复现计划模板',
+    description: '适合把论文转成可执行的开发任务。',
+    prompt: '把论文内容转成工程计划，输出目录结构、模块任务、接口、测试样例、里程碑和风险。',
+    content: `# 代码复现计划：{{title}}
+
+> 日期：{{date}}
+> 目标仓库 / 项目：
+
+## 1. 最小可行目标
+- 第一阶段要跑通：
+- 暂不实现：
+- 验收标准：
+
+## 2. 项目结构草案
+| 路径 / 模块 | 作用 | 优先级 |
+|---|---|---|
+|  |  |  |
+
+## 3. 核心接口
+| 接口 | 输入 | 输出 | 说明 |
+|---|---|---|---|
+|  |  |  |  |
+
+## 4. 实现任务
+- [ ] 数据加载
+- [ ] 模型 / 算法主体
+- [ ] 训练或推理脚本
+- [ ] 评估指标
+- [ ] 配置与日志
+- [ ] 示例与文档
+
+## 5. 测试计划
+- 单元测试：
+- 小样本冒烟测试：
+- 与论文结果对齐：
+
+## 6. 里程碑与风险
+| 阶段 | 目标 | 风险 |
+|---|---|---|
+| Day 1 |  |  |
+| Day 2-3 |  |  |
+| Week 1 |  |  |
+`,
+  },
+];
+
+function cloneNoteTemplate(template) {
+  return {
+    id: template.id,
+    name: template.name || '未命名模板',
+    description: template.description || '',
+    prompt: template.prompt || DEFAULT_NOTE_PROMPT,
+    content: template.content || DEFAULT_NOTE_TEMPLATE,
+    builtin: Boolean(template.builtin),
+  };
+}
+
+function withBuiltinFlag(template) {
+  return cloneNoteTemplate({ ...template, builtin: true });
+}
+
+function parseJsonArray(raw) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeNoteTemplates(savedTemplates, legacyTemplate, migrateLegacy = false) {
+  const builtins = BUILTIN_NOTE_TEMPLATES.map(withBuiltinFlag);
+  const byId = new Map(builtins.map((template) => [template.id, template]));
+
+  for (const template of savedTemplates) {
+    if (!template?.id) continue;
+    byId.set(template.id, cloneNoteTemplate(template));
+  }
+
+  const templates = [...byId.values()];
+  const hasLegacy = migrateLegacy
+    && typeof legacyTemplate === 'string'
+    && legacyTemplate.trim()
+    && legacyTemplate !== DEFAULT_NOTE_TEMPLATE;
+  const hasLegacyTemplate = templates.some((template) => template.id === 'legacy-custom');
+  if (hasLegacy && !hasLegacyTemplate) {
+    templates.unshift({
+      id: 'legacy-custom',
+      name: '旧版自定义模板',
+      description: '从旧版单模板配置迁移而来。',
+      prompt: DEFAULT_NOTE_PROMPT,
+      content: legacyTemplate,
+      builtin: false,
+    });
+  }
+  return templates.length ? templates : builtins;
+}
+
+function loadNoteTemplates() {
+  const saved = parseJsonArray(localStorage.getItem('note_templates'));
+  return normalizeNoteTemplates(
+    saved,
+    localStorage.getItem('note_template'),
+    saved.length === 0
+  );
+}
+
+function loadActiveNoteTemplateId() {
+  const savedActive = localStorage.getItem('active_note_template_id');
+  if (savedActive) return savedActive;
+  const saved = parseJsonArray(localStorage.getItem('note_templates'));
+  if (saved[0]?.id) return saved[0].id;
+  const legacy = localStorage.getItem('note_template');
+  return legacy && legacy !== DEFAULT_NOTE_TEMPLATE ? 'legacy-custom' : 'deep-reading';
+}
+
 export const useConfigStore = defineStore('config', {
   state: () => ({
     token: localStorage.getItem('mineru_token') || '',
     model: localStorage.getItem('mineru_model') || 'vlm',
     lang: localStorage.getItem('mineru_lang') || 'ch',
     noteTemplate: localStorage.getItem('note_template') || DEFAULT_NOTE_TEMPLATE,
+    noteTemplates: loadNoteTemplates(),
+    activeNoteTemplateId: loadActiveNoteTemplateId(),
     providers: JSON.parse(localStorage.getItem('ai_providers') || '[]'),
     currentProviderId: localStorage.getItem('ai_current_provider') || '',
     aiModel: localStorage.getItem('ai_model') || '',
@@ -194,6 +535,11 @@ export const useConfigStore = defineStore('config', {
       if (!p) return [];
       return [...(p.models || []), ...(p.customModels || [])];
     },
+    currentNoteTemplate(state) {
+      return state.noteTemplates.find((template) => template.id === state.activeNoteTemplateId)
+        || state.noteTemplates[0]
+        || withBuiltinFlag(BUILTIN_NOTE_TEMPLATES[0]);
+    },
   },
   actions: {
     async init() {
@@ -204,6 +550,7 @@ export const useConfigStore = defineStore('config', {
       if (!this.currentProviderId && this.providers.length) {
         this.currentProviderId = this.providers[0].id;
       }
+      this.ensureNoteTemplates();
       this._applyAgent();
     },
 
@@ -224,10 +571,15 @@ export const useConfigStore = defineStore('config', {
     },
 
     save() {
+      this.ensureNoteTemplates();
+      const activeTemplate = this.currentNoteTemplate;
+      this.noteTemplate = activeTemplate?.content || this.noteTemplate || DEFAULT_NOTE_TEMPLATE;
       localStorage.setItem('mineru_token', this.token);
       localStorage.setItem('mineru_model', this.model);
       localStorage.setItem('mineru_lang', this.lang);
       localStorage.setItem('note_template', this.noteTemplate);
+      localStorage.setItem('note_templates', JSON.stringify(this.noteTemplates));
+      localStorage.setItem('active_note_template_id', this.activeNoteTemplateId);
       localStorage.setItem('ai_providers', JSON.stringify(this.providers));
       localStorage.setItem('ai_current_provider', this.currentProviderId);
       localStorage.setItem('ai_model', this.aiModel);
@@ -253,6 +605,66 @@ export const useConfigStore = defineStore('config', {
       localStorage.setItem('ai_current_provider', this.currentProviderId);
       localStorage.setItem('ai_model', this.aiModel);
       this._applyAgent();
+    },
+
+    ensureNoteTemplates() {
+      this.noteTemplates = normalizeNoteTemplates(this.noteTemplates, '', false);
+      if (!this.noteTemplates.some((template) => template.id === this.activeNoteTemplateId)) {
+        this.activeNoteTemplateId = this.noteTemplates[0]?.id || 'deep-reading';
+      }
+      this.noteTemplate = this.currentNoteTemplate?.content || this.noteTemplate || DEFAULT_NOTE_TEMPLATE;
+    },
+
+    selectNoteTemplate(id) {
+      if (!this.noteTemplates.some((template) => template.id === id)) return;
+      this.activeNoteTemplateId = id;
+      this.noteTemplate = this.currentNoteTemplate?.content || this.noteTemplate;
+    },
+
+    addNoteTemplate(template = {}) {
+      const id = `custom-note-${Date.now().toString(36)}`;
+      this.noteTemplates.push({
+        id,
+        name: template.name || '自定义模板',
+        description: template.description || '',
+        prompt: template.prompt || DEFAULT_NOTE_PROMPT,
+        content: template.content || '# {{title}}\n\n## 摘要\n\n## 关键点\n\n## 我的思考\n',
+        builtin: false,
+      });
+      this.activeNoteTemplateId = id;
+      this.noteTemplate = this.currentNoteTemplate.content;
+      return id;
+    },
+
+    duplicateNoteTemplate(id) {
+      const source = this.noteTemplates.find((template) => template.id === id);
+      if (!source) return '';
+      return this.addNoteTemplate({
+        name: `${source.name} 副本`,
+        description: source.description,
+        prompt: source.prompt,
+        content: source.content,
+      });
+    },
+
+    removeNoteTemplate(id) {
+      const target = this.noteTemplates.find((template) => template.id === id);
+      if (!target || target.builtin || this.noteTemplates.length <= 1) return false;
+      this.noteTemplates = this.noteTemplates.filter((template) => template.id !== id);
+      if (this.activeNoteTemplateId === id) {
+        this.activeNoteTemplateId = this.noteTemplates[0]?.id || 'deep-reading';
+      }
+      this.noteTemplate = this.currentNoteTemplate?.content || DEFAULT_NOTE_TEMPLATE;
+      return true;
+    },
+
+    resetNoteTemplate(id) {
+      const builtin = BUILTIN_NOTE_TEMPLATES.find((template) => template.id === id);
+      const index = this.noteTemplates.findIndex((template) => template.id === id);
+      if (!builtin || index < 0) return false;
+      this.noteTemplates[index] = withBuiltinFlag(builtin);
+      if (this.activeNoteTemplateId === id) this.noteTemplate = this.noteTemplates[index].content;
+      return true;
     },
 
     addProvider(name, baseUrl, apiKey = '') {

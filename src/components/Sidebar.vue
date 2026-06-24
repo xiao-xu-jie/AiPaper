@@ -13,6 +13,28 @@
         spellcheck="false"
       />
 
+      <div class="status-filter">
+        <select v-model="selectedReadingStatus" title="阅读状态">
+          <option value="">全部阅读状态</option>
+          <option v-for="item in READING_STATUS_OPTIONS" :key="item.id" :value="item.id">
+            {{ item.label }}
+          </option>
+        </select>
+        <select v-model="selectedPaperState" title="解析状态">
+          <option value="">全部解析状态</option>
+          <option value="done">已完成</option>
+          <option value="running">解析中</option>
+          <option value="failed">失败</option>
+        </select>
+        <select v-model="selectedPriority" title="优先级">
+          <option value="">全部优先级</option>
+          <option v-for="item in PRIORITY_OPTIONS" :key="item.id" :value="item.id">
+            {{ item.label }}
+          </option>
+        </select>
+        <button v-if="hasStatusFilters" class="link-btn" @click="clearStatusFilters">清除状态</button>
+      </div>
+
       <div v-if="tagStore.tags.length" class="tag-filter">
         <div class="tag-filter-head">
           <span>标签</span>
@@ -275,12 +297,13 @@
   </Teleport>
 
   <Teleport to="body">
-    <div v-if="ctx.show" class="ctx-menu" :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }" @click.stop>
+    <div v-if="ctx.show" class="ctx-menu" :style="ctxMenuStyle" @click.stop>
       <button v-if="ctx.type === 'folder'" @click="createFolder(ctx.id)">新建子目录</button>
       <button v-if="ctx.type === 'folder' && ctx.id !== 'root'" @click="startRename(ctx.id)">重命名</button>
       <button v-if="ctx.type === 'folder' && ctx.id !== 'root'" class="danger" @click="delFolder(ctx.id)">删除目录</button>
       <template v-if="ctx.type === 'paper'">
         <button @click="startRemark(ctx.id)">{{ paperById(ctx.id)?.remark ? '编辑备注' : '添加备注' }}</button>
+        <button @click="openPaperDetails(ctx.id)">论文信息与状态</button>
         <button :disabled="aiRemarking" @click="generateRemark(ctx.id)">AI 生成备注</button>
         <button v-if="paperById(ctx.id)?.remark" @click="removeRemark(ctx.id)">删除备注</button>
         <button @click="startTagDialog(ctx.id)">编辑标签</button>
@@ -294,10 +317,12 @@
     </div>
     <div v-if="ctx.show" class="ctx-backdrop" @click="ctx.show = false" @contextmenu.prevent="ctx.show = false" />
 
-    <div v-if="ctx.show && showMoveMenu" class="ctx-menu move-menu" :style="{ left: ctx.x + 132 + 'px', top: ctx.y + 'px' }">
+    <div v-if="ctx.show && showMoveMenu" class="ctx-menu move-menu" :style="moveMenuStyle">
       <button v-for="f in allFolders" :key="f.id" @click="movePaper(ctx.id, f.id)">{{ f.name }}</button>
     </div>
   </Teleport>
+
+  <PaperDetailsDialog v-model="showDetails" :paper-id="detailTarget" />
 </template>
 
 <script setup>
@@ -307,9 +332,16 @@ import { useFoldersStore } from '../stores/folders.js';
 import { useTagsStore, normalizeTagNames, normalizeTagName } from '../stores/tags.js';
 import { useConfigStore } from '../stores/config.js';
 import FolderNode from './FolderNode.vue';
+import PaperDetailsDialog from './PaperDetailsDialog.vue';
 import * as store from '../lib/store.js';
 import * as agent from '../lib/agent.js';
 import * as siyuan from '../lib/siyuan.js';
+import {
+  PRIORITY_OPTIONS,
+  READING_STATUS_OPTIONS,
+  priorityLabel,
+  readingStatusLabel,
+} from '../lib/paperMeta.js';
 import JSZip from 'jszip';
 
 const papers = usePapersStore();
@@ -321,6 +353,9 @@ const toast = inject('toast', () => {});
 const width = ref(280);
 const dragging = ref(false);
 const searchText = ref('');
+const selectedReadingStatus = ref('');
+const selectedPaperState = ref('');
+const selectedPriority = ref('');
 const tagPanelExpanded = ref(false);
 const tagFilterRef = ref(null);
 const ctx = ref({ show: false, x: 0, y: 0, id: '', type: '' });
@@ -337,6 +372,8 @@ const tagTarget = ref(null);
 const tagDraft = ref('');
 const tagDraftTags = ref([]);
 const tagInput = ref(null);
+const showDetails = ref(false);
+const detailTarget = ref('');
 const aiTagging = ref(false);
 const aiTagDraft = ref('');
 const siyuanUploading = ref(false);
@@ -366,6 +403,8 @@ const aiTagPaper = computed(() => paperById(aiTagPanel.value.paperId));
 const aiRemarkPaper = computed(() => paperById(aiRemarkPanel.value.paperId));
 const searchQuery = computed(() => searchText.value.trim().toLowerCase());
 const activeTagKeys = computed(() => new Set(tagStore.activeTagNames.map((tag) => tag.toLowerCase())));
+const hasStatusFilters = computed(() => Boolean(selectedReadingStatus.value || selectedPaperState.value || selectedPriority.value));
+const paperFilteringActive = computed(() => Boolean(searchQuery.value || activeTagKeys.value.size || hasStatusFilters.value));
 const filteredPaperIds = computed(() => papers.papers.filter(matchesPaperFilters).map((paper) => paper.id));
 const orderedLibraryTags = computed(() => {
   return [...tagStore.tags].sort((a, b) => {
@@ -382,9 +421,56 @@ const canToggleTagPanel = computed(() => {
   return tagFilterRef.value.scrollHeight > tagFilterRef.value.clientHeight;
 });
 const hiddenTagCount = computed(() => Math.max(0, orderedLibraryTags.value.length - visibleLibraryTags.value.length));
+const MENU_MARGIN = 8;
+const MENU_WIDTH = 168;
+const MOVE_MENU_WIDTH = 180;
+const MENU_ITEM_HEIGHT = 35;
+
+const ctxMenuStyle = computed(() => {
+  const height = estimateContextMenuHeight();
+  return clampMenuPosition(ctx.value.x, ctx.value.y, MENU_WIDTH, height);
+});
+
+const moveMenuStyle = computed(() => {
+  const parent = ctxMenuStyle.value;
+  const viewportWidth = window.innerWidth || 1024;
+  const mainLeft = parseFloat(parent.left) || ctx.value.x;
+  const mainTop = parseFloat(parent.top) || ctx.value.y;
+  const rightX = mainLeft + MENU_WIDTH - 1;
+  const leftX = mainLeft - MOVE_MENU_WIDTH + 1;
+  const x = rightX + MOVE_MENU_WIDTH + MENU_MARGIN <= viewportWidth ? rightX : leftX;
+  const height = Math.min(allFolders.value.length * MENU_ITEM_HEIGHT + 2, viewportHeight() - MENU_MARGIN * 2);
+  return clampMenuPosition(x, mainTop, MOVE_MENU_WIDTH, height);
+});
 
 function paperById(id) {
   return papers.papers.find((p) => p.id === id) || null;
+}
+
+function viewportHeight() {
+  return window.innerHeight || 768;
+}
+
+function estimateContextMenuHeight() {
+  if (ctx.value.type === 'folder') {
+    return (ctx.value.id === 'root' ? 1 : 3) * MENU_ITEM_HEIGHT + 2;
+  }
+  if (ctx.value.type === 'paper') {
+    const paper = paperById(ctx.value.id);
+    return (paper?.remark ? 11 : 10) * MENU_ITEM_HEIGHT + 2;
+  }
+  return MENU_ITEM_HEIGHT + 2;
+}
+
+function clampMenuPosition(x, y, width, height) {
+  const viewportWidth = window.innerWidth || 1024;
+  const viewportHeightValue = viewportHeight();
+  const maxLeft = Math.max(MENU_MARGIN, viewportWidth - width - MENU_MARGIN);
+  const maxTop = Math.max(MENU_MARGIN, viewportHeightValue - Math.min(height, viewportHeightValue - MENU_MARGIN * 2) - MENU_MARGIN);
+  return {
+    left: `${Math.min(Math.max(MENU_MARGIN, x), maxLeft)}px`,
+    top: `${Math.min(Math.max(MENU_MARGIN, y), maxTop)}px`,
+  };
 }
 
 function showConfirm(msg, onOk) {
@@ -431,6 +517,18 @@ function matchesSearch(p) {
     p.fileName,
     p.remark,
     formatUploadTime(p),
+    readingStatusLabel(p.readingStatus),
+    priorityLabel(p.priority),
+    p.metadata?.title,
+    p.metadata?.authors,
+    p.metadata?.institutions,
+    p.metadata?.year,
+    p.metadata?.venue,
+    p.metadata?.doi,
+    p.metadata?.arxivId,
+    p.metadata?.abstract,
+    p.metadata?.codeUrl,
+    ...(p.metadata?.keywords || []),
     ...(p.tags || []),
   ].some((v) => String(v || '').toLowerCase().includes(q));
 }
@@ -440,8 +538,26 @@ function matchesActiveTags(p) {
   return (p.tags || []).some((tag) => activeTagKeys.value.has(String(tag).toLowerCase()));
 }
 
+function matchesStatusFilters(p) {
+  if (selectedReadingStatus.value && p.readingStatus !== selectedReadingStatus.value) return false;
+  if (selectedPriority.value && p.priority !== selectedPriority.value) return false;
+  if (selectedPaperState.value) {
+    if (selectedPaperState.value === 'running') {
+      return !['done', 'failed'].includes(p.state);
+    }
+    return p.state === selectedPaperState.value;
+  }
+  return true;
+}
+
 function matchesPaperFilters(p) {
-  return matchesSearch(p) && matchesActiveTags(p);
+  return matchesSearch(p) && matchesActiveTags(p) && matchesStatusFilters(p);
+}
+
+function clearStatusFilters() {
+  selectedReadingStatus.value = '';
+  selectedPaperState.value = '';
+  selectedPriority.value = '';
 }
 
 function isTagActive(name) {
@@ -552,6 +668,12 @@ async function removeRemark(id) {
   await papers.updateRemark(id, '');
 }
 
+function openPaperDetails(id) {
+  ctx.value.show = false;
+  detailTarget.value = id;
+  showDetails.value = true;
+}
+
 function startTagDialog(id) {
   ctx.value.show = false;
   const paper = paperById(id);
@@ -656,7 +778,8 @@ async function generateTags(id) {
       '论文内容：',
       String(md || '').slice(0, 12000),
     ].join('\n');
-    const reply = await agent.chat([], prompt, [], () => {});
+    const result = await agent.chat([], prompt, [], () => {});
+    const reply = typeof result === 'string' ? result : result.content;
     const generated = parseAiTags(reply);
     if (!generated.length) {
       aiTagPanel.value.error = 'AI 未返回有效标签';
@@ -765,7 +888,8 @@ async function generateRemark(id) {
       '论文内容：',
       String(md || '').slice(0, 12000),
     ].filter(Boolean).join('\n');
-    const reply = await agent.chat([], prompt, [], () => {});
+    const result = await agent.chat([], prompt, [], () => {});
+    const reply = typeof result === 'string' ? result : result.content;
     const generated = parseAiRemark(reply);
     if (!generated) {
       aiRemarkPanel.value.error = 'AI 未返回有效备注';
@@ -927,6 +1051,7 @@ provide('folders', folders);
 provide('tags', tagStore);
 provide('paperSearchText', searchText);
 provide('paperMatchesFilters', matchesPaperFilters);
+provide('paperFilteringActive', paperFilteringActive);
 provide('formatUploadTime', formatUploadTime);
 
 onMounted(() => {
@@ -970,6 +1095,29 @@ onMounted(() => {
   font-size: 13px;
 }
 .paper-search:focus { border-color: var(--primary); }
+.status-filter {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  align-items: center;
+}
+.status-filter select {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 7px;
+  outline: none;
+  background: #fff;
+  color: var(--text);
+  font-size: 11px;
+}
+.status-filter select:focus { border-color: var(--primary); }
+.status-filter .link-btn {
+  grid-column: 1 / -1;
+  justify-self: flex-start;
+}
 .btn-icon {
   width: 24px;
   height: 24px;
@@ -1093,8 +1241,10 @@ onMounted(() => {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0,0,0,.12);
-  overflow: hidden;
-  min-width: 132px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: 168px;
+  max-height: calc(100vh - 16px);
 }
 .ctx-menu button {
   display: block;
@@ -1106,6 +1256,9 @@ onMounted(() => {
   cursor: pointer;
   font-size: 13px;
   color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ctx-menu button:hover { background: #f0f1f3; }
 .ctx-menu button:disabled { color: var(--muted); cursor: default; }
@@ -1115,7 +1268,7 @@ onMounted(() => {
   inset: 0;
   z-index: 499;
 }
-.move-menu { min-width: 150px; }
+.move-menu { width: 180px; }
 .folder-dialog-backdrop {
   position: fixed;
   inset: 0;

@@ -36,6 +36,7 @@
   </main>
 
   <SessionPicker v-if="chatStore.showPicker" />
+  <UploadQueuePanel v-if="papers.uploadQueue.length" />
 
   <div class="toast" :class="toastState.cls" :style="{ opacity: toastState.show ? 1 : 0 }">{{ toastState.msg }}</div>
 
@@ -51,6 +52,7 @@ import Sidebar from './components/Sidebar.vue';
 import Viewer from './components/Viewer.vue';
 import ChatPanel from './components/ChatPanel.vue';
 import SessionPicker from './components/SessionPicker.vue';
+import UploadQueuePanel from './components/UploadQueuePanel.vue';
 import { useConfigStore } from './stores/config.js';
 import { usePapersStore } from './stores/papers.js';
 import { useChatStore } from './stores/chat.js';
@@ -130,7 +132,7 @@ async function onFileInput(e) {
   if (!files.length) return;
   try {
     await papers.upload(files, cfg);
-    toast(`上传完成`, 'success');
+    toast(`已加入 ${files.length} 个文件到解析队列`, 'success');
   } catch (e) { toast('失败：' + e.message, 'error'); }
 }
 

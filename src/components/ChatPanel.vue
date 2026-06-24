@@ -16,12 +16,24 @@
         <div class="chat-msg" :class="msgRole(msg)">
           <div class="chat-bubble" :class="msgRole(msg)" v-html="renderBubble(msg)" />
           <div v-if="msgRole(msg) === 'assistant'" class="copy-bar">
+            <span v-if="msgMetaText(msg)" class="msg-meta">{{ msgMetaText(msg) }}</span>
+            <button
+              v-if="i === lastAssistantIndex"
+              class="copy-btn"
+              :disabled="chat.busy"
+              @click="regenerateLast"
+            >
+              {{ msg.meta?.error || msg.meta?.canceled ? '重试' : '重新生成' }}
+            </button>
             <button class="copy-btn" @click="copy(msg, 'md')">复制 MD</button>
             <button class="copy-btn" @click="copy(msg, 'text')">复制纯文本</button>
           </div>
         </div>
       </template>
       <div v-if="chat.busy" class="chat-msg assistant">
+        <div class="stream-head">
+          <span>{{ activeModelLabel }} 正在生成...</span>
+        </div>
         <div class="chat-bubble assistant" v-html="streamingHtml" />
       </div>
     </div>
@@ -61,7 +73,8 @@
           <span v-if="selectedRefPapers.length" class="ref-tool-count">{{ selectedRefPapers.length }}</span>
         </button>
         <ModelSwitcher />
-        <button class="btn primary" :disabled="chat.busy" @click="send">发送</button>
+        <button v-if="chat.busy" class="btn stop-btn" @click="chat.cancelCurrent()">停止</button>
+        <button v-else class="btn primary" @click="send">发送</button>
       </div>
     </div>
   </aside>
@@ -111,6 +124,7 @@
 import { ref, watch, nextTick, shallowRef, onMounted, onUnmounted, computed } from 'vue';
 import { useChatStore } from '../stores/chat.js';
 import { usePapersStore } from '../stores/papers.js';
+import { useConfigStore } from '../stores/config.js';
 import { parseMarkdown, parseMarkdownWithMath } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import ModelSwitcher from './ModelSwitcher.vue';
@@ -118,6 +132,7 @@ import ModelSwitcher from './ModelSwitcher.vue';
 const emit = defineEmits(['close']);
 const chat = useChatStore();
 const papers = usePapersStore();
+const cfg = useConfigStore();
 
 const MIN_WIDTH = 200;
 const DEFAULT_WIDTH = 340;
@@ -186,6 +201,19 @@ const selectedRefPapers = computed(() => selectedRefIds.value
   .map((id) => papers.papers.find((p) => p.id === id))
   .filter(Boolean));
 
+const lastAssistantIndex = computed(() => {
+  const messages = chat.session?.messages || [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant') return i;
+  }
+  return -1;
+});
+
+const activeModelLabel = computed(() => {
+  const provider = cfg.currentProvider?.name || 'AI';
+  return cfg.aiModel ? `${provider} / ${cfg.aiModel}` : provider;
+});
+
 const filteredRefPapers = computed(() => {
   const query = refSearch.value.trim().toLowerCase();
   return papers.papers
@@ -208,9 +236,16 @@ function toggleRefPaper(id) {
   selectedRefIds.value = [...selectedRefIds.value, id];
 }
 
-async function loadReferenceContexts() {
+function refsByIds(ids) {
+  return ids
+    .map((id) => papers.papers.find((p) => p.id === id))
+    .filter(Boolean)
+    .slice(0, MAX_REF_PAPERS);
+}
+
+async function loadReferenceContexts(ids = selectedRefIds.value) {
   const contexts = [];
-  for (const p of selectedRefPapers.value.slice(0, MAX_REF_PAPERS)) {
+  for (const p of refsByIds(ids)) {
     const md = await store.loadMarkdown(p.id).catch(() => null);
     if (md) contexts.push({ id: p.id, title: paperTitle(p), md });
   }
@@ -282,6 +317,32 @@ function copy(msg, fmt) {
   navigator.clipboard.writeText(text);
 }
 
+function formatDuration(ms) {
+  if (!ms) return '';
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
+}
+
+function formatUsage(usage) {
+  if (!usage) return '';
+  const tokens = usage.total_tokens || usage.completion_tokens || usage.output_tokens;
+  if (!tokens) return '';
+  return `${usage.estimated ? '约 ' : ''}${tokens} tokens`;
+}
+
+function msgMetaText(msg) {
+  const meta = msg?.meta || {};
+  const parts = [];
+  if (meta.error) parts.push('错误');
+  else if (meta.canceled) parts.push('已取消');
+  if (meta.model) parts.push(meta.model);
+  const duration = formatDuration(meta.durationMs);
+  if (duration) parts.push(duration);
+  const usage = formatUsage(meta.usage);
+  if (usage) parts.push(usage);
+  if (meta.refIds?.length) parts.push(`引用 ${meta.refIds.length}`);
+  return parts.join(' · ');
+}
+
 function renderBubble(msg) {
   const text = getMsgText(msg);
   if (msg.role === 'assistant') {
@@ -305,28 +366,54 @@ function escHtml(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+function resetStreaming() {
+  streamingReply.value = ' ';
+  streamingHtml.value = '<span class="cursor">▌</span>';
+}
+
+function appendStreamingChunk(chunk) {
+  streamingReply.value = (streamingReply.value.trim() ? streamingReply.value : '') + chunk;
+  streamingHtml.value = parseMarkdownWithMath(streamingReply.value) + '<span class="cursor">▌</span>';
+  nextTick(() => { if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight; });
+}
+
+function clearStreaming() {
+  streamingReply.value = '';
+  streamingHtml.value = '<span class="cursor">▌</span>';
+  nextTick(() => { if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight; });
+}
+
 async function send() {
   const msg = inputMsg.value.trim();
   const images = [...pendingImages.value];
   if (!msg && !images.length) return;
   inputMsg.value = '';
   pendingImages.value = [];
-  streamingReply.value = ' '; // 立刻显示光标占位
-  streamingHtml.value = '<span class="cursor">▌</span>';
+  resetStreaming();
 
   try {
-    const extraContexts = await loadReferenceContexts();
-    await chat.send(msg, images, (chunk) => {
-      streamingReply.value = (streamingReply.value.trim() ? streamingReply.value : '') + chunk;
-      streamingHtml.value = parseMarkdownWithMath(streamingReply.value) + '<span class="cursor">▌</span>';
-      nextTick(() => { if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight; });
-    }, { extraContexts });
-  } catch (e) {
-    chat.session?.messages.push({ role: 'assistant', content: `[错误] ${e.message}` });
+    const refIds = [...selectedRefIds.value];
+    const extraContexts = await loadReferenceContexts(refIds);
+    await chat.send(msg, images, appendStreamingChunk, { extraContexts, refIds });
+  } catch {
+    // chat store 已经写入错误消息，这里只负责收起流式占位。
   } finally {
-    streamingReply.value = '';
-    streamingHtml.value = '<span class="cursor">▌</span>';
-    nextTick(() => { if (msgBox.value) msgBox.value.scrollTop = msgBox.value.scrollHeight; });
+    clearStreaming();
+  }
+}
+
+async function regenerateLast() {
+  if (chat.busy) return;
+  resetStreaming();
+  try {
+    const last = chat.session?.messages?.[lastAssistantIndex.value];
+    const refIds = last?.meta?.refIds || [];
+    const extraContexts = await loadReferenceContexts(refIds);
+    await chat.regenerateLast(appendStreamingChunk, { extraContexts, refIds });
+  } catch {
+    // chat store 已经写入错误消息。
+  } finally {
+    clearStreaming();
   }
 }
 
@@ -458,25 +545,64 @@ defineExpose({
   font-weight: 600;
 }
 .chat-input-bar :deep(.model-switcher) { min-width: 0; }
-.chat-input-bar .btn.primary {
+.chat-input-bar .btn.primary,
+.chat-input-bar .stop-btn {
   height: 30px;
   align-self: stretch;
   padding: 0 13px;
   border-radius: 8px;
   font-size: 13px;
 }
+.chat-input-bar .stop-btn {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+}
+.chat-input-bar .stop-btn:hover {
+  background: #c62f2f;
+  border-color: #c62f2f;
+}
 .chat-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 .chat-msg { display: flex; flex-direction: column; gap: 4px; max-width: 92%; }
 .chat-msg.user { align-self: flex-end; align-items: flex-end; }
 .chat-msg.assistant { align-self: flex-start; }
-.copy-bar { display: none; gap: 4px; margin-top: 4px; }
-.chat-msg:hover .copy-bar { display: flex; }
+.copy-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.msg-meta {
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: auto;
+  line-height: 1.8;
+}
 .copy-btn {
   font-size: 11px; padding: 2px 8px; border-radius: 4px;
   border: 1px solid var(--border); background: var(--panel);
   cursor: pointer; color: var(--muted); transition: .12s;
 }
+.copy-bar .copy-btn {
+  opacity: 0;
+  pointer-events: none;
+}
+.chat-msg:hover .copy-bar .copy-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
 .copy-btn:hover { background: #f0f1f3; color: var(--text); }
+.copy-btn:disabled { opacity: .5; cursor: not-allowed; }
+.stream-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.stream-head span { margin-right: auto; }
 .chat-bubble { padding: 10px 13px; border-radius: 10px; font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 .chat-bubble.user { background: var(--primary); color: #fff; border-radius: 10px 2px 10px 10px; white-space: normal; }
 .chat-bubble.assistant { background: #f0f1f3; color: var(--text); border-radius: 2px 10px 10px 10px; white-space: normal; }

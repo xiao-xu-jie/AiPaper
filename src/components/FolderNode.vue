@@ -53,7 +53,16 @@
           <div class="pi-title" :title="displayTitle(p)">{{ displayTitle(p) }}</div>
           <div class="pi-sub">
             <span class="badge" :class="badgeClass(p)">{{ badgeLabel(p) }}</span>
+            <span class="reading-chip">{{ readingStatusLabel(p.readingStatus) }}</span>
+            <span v-if="p.priority && p.priority !== 'normal'" class="priority-chip" :class="p.priority">
+              {{ priorityLabel(p.priority) }}
+            </span>
+            <span v-if="p.rating" class="rating-chip">★ {{ p.rating }}</span>
             <span class="pi-time">{{ formatTime(p) }}</span>
+          </div>
+          <div v-if="p.deadline || p.readingPurpose" class="workflow-hint">
+            <span v-if="p.deadline">截止 {{ p.deadline }}</span>
+            <span v-if="p.readingPurpose">{{ p.readingPurpose }}</span>
           </div>
           <div v-if="p.tags?.length" class="paper-tags">
             <button
@@ -85,6 +94,7 @@
 
 <script setup>
 import { computed, inject, ref } from 'vue';
+import { priorityLabel, readingStatusLabel } from '../lib/paperMeta.js';
 
 const props = defineProps({ nodeId: String, depth: { type: Number, default: 0 } });
 
@@ -94,6 +104,7 @@ const folders = inject('folders');
 const tags = inject('tags');
 const paperSearchText = inject('paperSearchText');
 const paperMatchesFilters = inject('paperMatchesFilters');
+const paperFilteringActive = inject('paperFilteringActive', null);
 const injectedFormatUploadTime = inject('formatUploadTime', null);
 const toast = inject('toast', () => {});
 const dragState = inject('dragState');
@@ -102,7 +113,7 @@ const node = computed(() => folders.tree[props.nodeId] || { children: [], papers
 const expanded = computed(() => !!folders.expanded[props.nodeId]);
 const searchQuery = computed(() => (paperSearchText?.value || '').trim().toLowerCase());
 const activeTagKeys = computed(() => new Set((tags?.activeTagNames || []).map((tag) => tag.toLowerCase())));
-const filtering = computed(() => !!searchQuery.value || activeTagKeys.value.size > 0);
+const filtering = computed(() => paperFilteringActive?.value ?? (!!searchQuery.value || activeTagKeys.value.size > 0));
 
 const isDropOver = ref(false);
 const dropIndicator = ref(null); // 'paperId:before' | 'paperId:after'
@@ -369,6 +380,7 @@ const badgeLabel = (p) => (p.stateText && p.state !== 'done' ? p.stateText : (ST
   align-items: center;
   gap: 6px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 .pi-time {
   font-size: 10px;
@@ -386,6 +398,42 @@ const badgeLabel = (p) => (p.stateText && p.state !== 'done' ? p.stateText : (ST
 .badge.done { background: #e6f7ec; color: var(--green); }
 .badge.failed { background: #fce8e8; color: var(--red); }
 .badge.running { background: #fff2e0; color: var(--orange); }
+.reading-chip,
+.priority-chip,
+.rating-chip {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #f0f1f3;
+  color: var(--muted);
+}
+.priority-chip.high {
+  background: #fce8e8;
+  color: var(--red);
+}
+.priority-chip.low {
+  background: #eef3ff;
+  color: var(--primary);
+}
+.rating-chip {
+  background: #fff7d6;
+  color: #9a6500;
+}
+.workflow-hint {
+  margin-top: 4px;
+  display: flex;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.workflow-hint span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .paper-tags {
   margin-top: 5px;
   display: flex;

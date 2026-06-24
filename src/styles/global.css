@@ -47,6 +47,11 @@ body {
 .markdown-body h2 { font-size: 1.4em; }
 .markdown-body p { margin: .8em 0; }
 .markdown-body img { max-width: 100%; display: block; margin: 1em auto; border-radius: 4px; }
+.markdown-body img.lazy-image-pending {
+  min-height: 96px;
+  background: #f3f4f6;
+  border: 1px dashed var(--border);
+}
 .markdown-body table { border-collapse: collapse; margin: 1em 0; width: 100%; }
 .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 8px 12px; }
 .markdown-body th { background: #f6f7f9; }

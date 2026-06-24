@@ -2,10 +2,22 @@
   <div class="notes-wrap">
     <div class="notes-toolbar">
       <span class="notes-status">{{ statusText }}</span>
+      <select
+        v-model="cfg.activeNoteTemplateId"
+        class="template-select"
+        :disabled="generating"
+        @change="onTemplateChange"
+      >
+        <option v-for="template in cfg.noteTemplates" :key="template.id" :value="template.id">
+          {{ template.name }}
+        </option>
+      </select>
+      <button class="btn small" :disabled="generating || !papers.currentId" @click="applyCurrentTemplate">套用模板</button>
       <ModelSwitcher />
       <button class="btn small" :disabled="generating" @click="generate">
         {{ generating ? '生成中...' : '✨ AI 生成笔记' }}
       </button>
+      <button v-if="generating" class="btn small danger-lite" @click="cancelGenerate">停止生成</button>
       <button class="btn small" :class="{ active: mode === 'edit' }" @click="mode = 'edit'">编辑</button>
       <button class="btn small" :class="{ active: mode === 'preview' }" @click="mode = 'preview'">预览</button>
       <button class="btn small" @click="save">保存</button>
@@ -71,7 +83,7 @@
 import { ref, watch, computed, nextTick, reactive, inject, onUnmounted } from 'vue';
 import { usePapersStore } from '../stores/papers.js';
 import { useConfigStore } from '../stores/config.js';
-import { parseMarkdown, renderMarkdown } from '../lib/render.js';
+import { cleanupMarkdownRender, parseMarkdown, renderMarkdown } from '../lib/render.js';
 import * as store from '../lib/store.js';
 import * as agent from '../lib/agent.js';
 import ModelSwitcher from './ModelSwitcher.vue';
@@ -90,11 +102,13 @@ const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '' });
 const preview = reactive({ show: false, src: '' });
 const showOutline = ref(true);
 const outline = ref([]);
+let noteAbortController = null;
 
 // 生成状态按论文隔离，支持多篇论文同时后台生成。
 const currentNoteTask = computed(() => papers.currentId ? papers.noteTask(papers.currentId) : null);
 const generating = computed(() => Boolean(currentNoteTask.value?.generating));
 const streamText = computed(() => currentNoteTask.value?.stream || '');
+const currentTemplate = computed(() => cfg.currentNoteTemplate);
 
 function extractOutline() {
   if (!previewEl.value) return [];
@@ -158,9 +172,11 @@ function clearStreamImageCache() {
 function scheduleStreamRender(text, paperId = papers.currentId) {
   clearStreamRenderTimer();
   const seq = ++streamRenderSeq;
+  const length = String(text || '').length;
+  const delay = length > 120000 ? 360 : length > 50000 ? 180 : 80;
   streamRenderTimer = setTimeout(() => {
     renderStreamMarkdown(text, seq, paperId);
-  }, 80);
+  }, delay);
 }
 
 async function renderStreamMarkdown(text, seq, paperId) {
@@ -196,7 +212,50 @@ watch(() => papers.currentId, () => {
 onUnmounted(() => {
   clearStreamRenderTimer();
   clearStreamImageCache();
+  cleanupMarkdownRender(previewEl.value);
 });
+
+function cancelGenerate() {
+  noteAbortController?.abort();
+}
+
+function formatTemplateDate() {
+  const date = new Date();
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function renderNoteTemplate(templateText, paper = papers.currentPaper) {
+  const metadata = paper?.metadata || {};
+  const authors = Array.isArray(metadata.authors) ? metadata.authors.join('、') : (metadata.authors || '');
+  const values = {
+    title: paper?.title || metadata.title || paper?.remark || paper?.fileName || '论文',
+    fileName: paper?.fileName || '',
+    date: formatTemplateDate(),
+    authors,
+    year: metadata.year || '',
+    venue: metadata.venue || '',
+    tags: paper?.tags?.length ? paper.tags.join('、') : '无',
+  };
+  return String(templateText || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (match, key) => (
+    Object.prototype.hasOwnProperty.call(values, key) ? values[key] : match
+  ));
+}
+
+function onTemplateChange() {
+  cfg.selectNoteTemplate(cfg.activeNoteTemplateId);
+  cfg.save();
+}
+
+function applyCurrentTemplate() {
+  if (!papers.currentId) return;
+  if (noteText.value.trim() && !window.confirm('当前笔记已有内容，套用模板会覆盖编辑区内容，是否继续？')) return;
+  noteText.value = renderNoteTemplate(currentTemplate.value?.content);
+  mode.value = 'edit';
+  statusText.value = `已套用模板：${currentTemplate.value?.name || '自定义模板'}，可继续编辑后保存`;
+}
 
 // 预览时用 renderMarkdown 替换图片路径
 watch([mode, noteText], async ([m]) => {
@@ -226,12 +285,15 @@ async function generate() {
     return;
   }
 
-  const title = papers.currentPaper?.title || '论文';
-  const template = cfg.noteTemplate.replace(/\{\{title\}\}/g, title);
+  const selectedTemplate = currentTemplate.value;
+  const template = renderNoteTemplate(selectedTemplate?.content);
+  const templatePrompt = selectedTemplate?.prompt || '请按模板生成结构化阅读笔记。';
 
   const prompt = `请根据以下论文内容，严格按照给定模板生成一份详细的阅读笔记，使用 Markdown 格式输出，不要有多余解释。
 
 要求：
+- 当前模板：${selectedTemplate?.name || '自定义模板'}
+- 模板生成要求：${templatePrompt}
 - 如果论文内容中包含图片（Markdown 格式如 ![...](images/xxx.png)），请在笔记的相关位置原样嵌入对应图片引用，让笔记更直观。
 
 模板：
@@ -241,25 +303,42 @@ ${template}
 ${paperMd}`;
 
   papers.beginNoteGeneration(generatingFor);
-  statusText.value = '正在生成...';
+  statusText.value = `正在按「${selectedTemplate?.name || '自定义模板'}」生成...`;
   mode.value = 'preview';
+  noteAbortController = new AbortController();
 
   try {
     const result = await agent.chat([], prompt, [], (chunk) => {
       papers.appendNoteStream(generatingFor, chunk);
-    });
-    await store.saveNote(generatingFor, result);
+    }, { signal: noteAbortController.signal });
+    const note = typeof result === 'string' ? result : result.content;
+    await store.saveNote(generatingFor, note);
     papers.finishNoteGeneration(generatingFor);
     if (papers.currentId === generatingFor) {
-      noteText.value = result;
+      noteText.value = note;
       mode.value = 'preview';
       statusText.value = '生成完成，可继续编辑';
     }
   } catch (e) {
+    if (agent.isAbortError(e)) {
+      const partial = papers.noteTask(generatingFor)?.stream || '';
+      if (partial.trim()) await store.saveNote(generatingFor, partial);
+      papers.finishNoteGeneration(generatingFor);
+      if (papers.currentId === generatingFor) {
+        noteText.value = partial;
+        mode.value = partial.trim() ? 'preview' : 'edit';
+        statusText.value = partial.trim() ? '已停止，已保留当前内容' : '已停止';
+      }
+      return;
+    }
     papers.failNoteGeneration(generatingFor, e.message);
     if (papers.currentId === generatingFor) {
       statusText.value = '生成失败：' + e.message;
       toast('生成失败：' + e.message, 'error');
+    }
+  } finally {
+    if (noteAbortController?.signal?.aborted || papers.currentId === generatingFor) {
+      noteAbortController = null;
     }
   }
 }
@@ -396,8 +475,32 @@ async function copyAsPlainText() {
   display: flex; align-items: center; gap: 8px;
   padding: 10px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
-.notes-status { flex: 1; font-size: 12px; color: var(--muted); }
+.notes-status {
+  flex: 1;
+  min-width: 80px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.template-select {
+  width: 150px;
+  max-width: 20vw;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+}
+.template-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.danger-lite { color: var(--red); border-color: #f2c0c0; }
 .notes-body { flex: 1; overflow: hidden; position: relative; display: flex; }
 .outline-panel {
   width: 240px; flex-shrink: 0;

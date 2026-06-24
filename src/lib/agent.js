@@ -11,6 +11,14 @@ export function setContext(md) {
   paperMd = md || '';
 }
 
+export function getCurrentConfig() {
+  return { ...cfg };
+}
+
+export function isAbortError(error) {
+  return error?.name === 'AbortError' || /aborted|abort|取消/i.test(String(error?.message || ''));
+}
+
 function buildSystemContent(extraContexts = []) {
   const validExtra = extraContexts.filter((ctx) => ctx?.md);
   if (!paperMd && !validExtra.length) return '你是一个学术助手，请帮助用户理解和分析论文内容。';
@@ -36,6 +44,7 @@ function getProxyUrl(targetUrl) {
 // history: {role, content}[]，不含 system；返回 assistant 回复字符串
 export async function chat(history, userMsg, images = [], onChunk, options = {}) {
   if (!cfg.url || !cfg.model) throw new Error('请先填写并保存 AI 接口地址和模型名称');
+  const startedAt = Date.now();
 
   const userContent = images.length
     ? [
@@ -55,6 +64,7 @@ export async function chat(history, userMsg, images = [], onChunk, options = {})
   const targetUrl = `${cfg.url}/chat/completions`;
   const res = await fetch(getProxyUrl(targetUrl), {
     method: 'POST',
+    signal: options.signal,
     headers: {
       'Content-Type': 'application/json',
       ...(cfg.key ? { Authorization: `Bearer ${cfg.key}` } : {}),
@@ -71,6 +81,7 @@ export async function chat(history, userMsg, images = [], onChunk, options = {})
   const dec = new TextDecoder();
   let assistantMsg = '';
   let buf = '';
+  let usage = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -83,11 +94,24 @@ export async function chat(history, userMsg, images = [], onChunk, options = {})
       const data = line.slice(6).trim();
       if (data === '[DONE]') continue;
       try {
-        const delta = JSON.parse(data).choices?.[0]?.delta?.content || '';
+        const parsed = JSON.parse(data);
+        if (parsed.usage) usage = parsed.usage;
+        const delta = parsed.choices?.[0]?.delta?.content || '';
         if (delta) { assistantMsg += delta; onChunk(delta); }
       } catch { /* noop */ }
     }
   }
 
-  return assistantMsg;
+  const durationMs = Date.now() - startedAt;
+  const estimatedOutputTokens = Math.ceil(assistantMsg.length / 3.2);
+  return {
+    content: assistantMsg,
+    model: cfg.model,
+    providerUrl: cfg.url,
+    durationMs,
+    usage: usage || {
+      estimated: true,
+      completion_tokens: estimatedOutputTokens,
+    },
+  };
 }

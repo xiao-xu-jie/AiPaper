@@ -93,8 +93,43 @@
           <div class="template-section">
             <button class="btn small" @click="showTemplate = !showTemplate">📝 笔记模板</button>
             <div v-if="showTemplate" class="template-editor">
-              <div class="template-label">阅读笔记模板（支持 <code>{{title}}</code> 占位符）</div>
-              <textarea v-model="cfg.noteTemplate" rows="8" class="template-textarea" />
+              <div class="template-manager-head">
+                <label>当前模板
+                  <select v-model="cfg.activeNoteTemplateId" @change="cfg.selectNoteTemplate(cfg.activeNoteTemplateId)">
+                    <option v-for="template in cfg.noteTemplates" :key="template.id" :value="template.id">
+                      {{ template.name }}{{ template.builtin ? '（内置）' : '' }}
+                    </option>
+                  </select>
+                </label>
+                <button class="btn small" @click="addTemplate">新增</button>
+                <button class="btn small" @click="duplicateTemplate">复制</button>
+                <button
+                  class="btn small"
+                  :disabled="!selectedTemplate?.builtin"
+                  @click="resetTemplate"
+                >重置</button>
+                <button
+                  class="btn small btn-danger"
+                  :disabled="selectedTemplate?.builtin"
+                  @click="removeTemplate"
+                >删除</button>
+              </div>
+
+              <div v-if="selectedTemplate" class="template-form">
+                <label>模板名称
+                  <input v-model="selectedTemplate.name" type="text" />
+                </label>
+                <label>说明
+                  <input v-model="selectedTemplate.description" type="text" />
+                </label>
+                <label>AI 生成要求
+                  <textarea v-model="selectedTemplate.prompt" rows="3" class="template-textarea compact" />
+                </label>
+                <div class="template-label">
+                  模板正文（支持 <code>{{title}}</code>、<code>{{date}}</code>、<code>{{fileName}}</code>、<code>{{tags}}</code>）
+                </div>
+                <textarea v-model="selectedTemplate.content" rows="12" class="template-textarea" />
+              </div>
             </div>
           </div>
         </div>
@@ -140,7 +175,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue';
+import { computed, ref, watch, nextTick } from 'vue';
 import { useConfigStore } from '../stores/config.js';
 
 const props = defineProps({ modelValue: Boolean });
@@ -159,13 +194,19 @@ const confirmRemove = ref(false);
 const newProvider = ref({ name: '', baseUrl: '', apiKey: '' });
 const fetching = ref(false);
 const fetchError = ref('');
+const selectedTemplate = computed(() => cfg.currentNoteTemplate);
 
 watch(
-  () => [cfg.currentProviderId, cfg.aiModel, cfg.noteTemplate],
+  () => [cfg.currentProviderId, cfg.aiModel, cfg.activeNoteTemplateId],
   () => { dirty.value = true; }
 );
 watch(
   () => cfg.providers,
+  () => { dirty.value = true; },
+  { deep: true }
+);
+watch(
+  () => cfg.noteTemplates,
   () => { dirty.value = true; },
   { deep: true }
 );
@@ -248,6 +289,26 @@ function confirmCustomModel() {
   cfg.addCustomModel(cfg.currentProviderId, modelId);
   cfg.aiModel = modelId;
   cancelCustomModel();
+}
+
+function addTemplate() {
+  cfg.addNoteTemplate();
+  showTemplate.value = true;
+}
+
+function duplicateTemplate() {
+  cfg.duplicateNoteTemplate(cfg.activeNoteTemplateId);
+}
+
+function resetTemplate() {
+  if (!selectedTemplate.value?.builtin) return;
+  cfg.resetNoteTemplate(selectedTemplate.value.id);
+}
+
+function removeTemplate() {
+  if (!selectedTemplate.value || selectedTemplate.value.builtin) return;
+  if (!window.confirm(`确认删除模板「${selectedTemplate.value.name}」？`)) return;
+  cfg.removeNoteTemplate(selectedTemplate.value.id);
 }
 
 function save() {
@@ -346,11 +407,27 @@ input[readonly] { background: #f5f5f5; color: var(--muted); }
   font-size: 14px; padding: 0; line-height: 1;
 }
 .template-section { margin-top: 14px; }
-.template-editor { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.template-editor { margin-top: 8px; display: flex; flex-direction: column; gap: 10px; }
+.template-manager-head {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto auto auto;
+  gap: 8px;
+  align-items: end;
+}
+.template-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .template-label { font-size: 12px; color: var(--muted); }
 .template-label code { background: #f0f1f3; padding: 1px 4px; border-radius: 3px; }
 .template-textarea { width: 100%; font-family: "SF Mono", Consolas, monospace; font-size: 13px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; resize: vertical; line-height: 1.6; outline: none; }
+.template-textarea.compact { min-height: 72px; }
 .template-textarea:focus { border-color: var(--primary); }
+.template-manager-head .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .dialog-footer {
   display: flex; gap: 12px; justify-content: flex-end;
   padding: 16px 24px; border-top: 1px solid var(--border);

@@ -6,7 +6,8 @@
       <span class="subtitle">MinerU 在线解析</span>
     </div>
     <button class="btn secondary" @click="showMinerUConfig = true">⚙️ MinerU</button>
-    <button class="btn secondary" @click="showAIConfig = true">🤖 AI 模型</button>
+    <button class="btn secondary" @click="openAIConfig">🤖 AI 模型</button>
+    <button class="btn secondary" @click="openTemplateConfig">📝 笔记模板</button>
     <button class="btn secondary" @click="showTagManager = true">🏷 标签管理</button>
     <button class="btn secondary" @click="showExtensions = true">🧩 扩展</button>
     <button class="btn secondary" @click="showHelp = true">❓ 帮助</button>
@@ -16,7 +17,7 @@
   </header>
 
   <MinerUConfigDialog v-model="showMinerUConfig" @pickDir="$emit('pickDir')" />
-  <AIConfigDialog v-model="showAIConfig" />
+  <AIConfigDialog v-model="showAIConfig" :initial-template-open="openTemplateOnShow" />
   <ExtensionsDialog v-model="showExtensions" />
 
   <Teleport to="body">
@@ -117,9 +118,9 @@
             <h3>4️⃣ 开始使用</h3>
             <ol>
               <li><strong>上传 PDF</strong>：点击「＋ 上传 PDF」或拖拽文件到页面</li>
-              <li><strong>查看内容</strong>：解析完成后可切换 Markdown、原文 PDF、阅读笔记三个标签页</li>
+              <li><strong>查看内容</strong>：解析完成后可切换 Markdown、原文 PDF、图表库、阅读笔记</li>
               <li><strong>AI 助手</strong>：点击「💬 AI 助手」或右键选中内容/图片快捷提问</li>
-              <li><strong>生成笔记</strong>：切换到阅读笔记标签页，点击「✨ AI 生成笔记」</li>
+              <li><strong>生成笔记</strong>：切换到阅读笔记标签页，可新建多篇笔记并按不同模板生成</li>
             </ol>
           </section>
 
@@ -167,6 +168,7 @@ defineEmits(['upload', 'pickDir']);
 const showHelp = ref(false);
 const showMinerUConfig = ref(false);
 const showAIConfig = ref(false);
+const openTemplateOnShow = ref(false);
 const showExtensions = ref(false);
 const showTagManager = ref(false);
 const tagSearch = ref('');
@@ -190,6 +192,16 @@ const managedTags = computed(() => {
       return a.name.localeCompare(b.name, 'zh-Hans-CN');
     });
 });
+
+function openAIConfig() {
+  openTemplateOnShow.value = false;
+  showAIConfig.value = true;
+}
+
+function openTemplateConfig() {
+  openTemplateOnShow.value = true;
+  showAIConfig.value = true;
+}
 
 function tagUsage(name) {
   return tagStore.usageCount(name, papers.papers);

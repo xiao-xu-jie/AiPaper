@@ -195,7 +195,7 @@ export async function listPaperAssets(paperId) {
   const dir = await getPaperDir(paperId);
   const SKIP_TOP = new Set([
     'meta.json', 'full.md', 'note.md', 'original.pdf',
-    'translations.json', 'annotations.json', 'chats',
+    'translations.json', 'annotations.json', 'chats', 'notes',
   ]);
   const out = [];
   async function walk(handle, prefix) {
@@ -278,14 +278,193 @@ export async function deleteChat(paperId, chatId) {
 }
 
 // ---------- 阅读笔记 ----------
+const LEGACY_NOTE_ID = 'legacy-note';
+
 export async function saveNote(paperId, text) {
   const dir = await getPaperDir(paperId, true);
   await writeFile(dir, 'note.md', text);
 }
 
-export async function loadNote(paperId) {
+async function loadLegacyNote(paperId) {
   const dir = await getPaperDir(paperId);
   return readFileText(dir, 'note.md');
+}
+
+export async function loadNote(paperId) {
+  const index = await loadNoteIndex(paperId);
+  const activeId = index.activeId || index.notes[0]?.id || '';
+  if (activeId) return loadNoteDoc(paperId, activeId);
+  return loadLegacyNote(paperId);
+}
+
+async function getNotesDir(paperId, create = false) {
+  const dir = await getPaperDir(paperId, create);
+  return dir.getDirectoryHandle('notes', { create });
+}
+
+function normalizeNoteDoc(doc = {}) {
+  const now = Date.now();
+  return {
+    id: String(doc.id || '').trim(),
+    title: String(doc.title || '阅读笔记').trim() || '阅读笔记',
+    templateId: String(doc.templateId || '').trim(),
+    templateName: String(doc.templateName || '').trim(),
+    createdAt: Number(doc.createdAt) || now,
+    updatedAt: Number(doc.updatedAt) || Number(doc.createdAt) || now,
+    legacy: Boolean(doc.legacy),
+  };
+}
+
+async function loadNoteIndex(paperId) {
+  try {
+    const dir = await getNotesDir(paperId);
+    const txt = await readFileText(dir, 'index.json');
+    const data = txt ? JSON.parse(txt) : {};
+    return {
+      activeId: String(data.activeId || '').trim(),
+      notes: Array.isArray(data.notes) ? data.notes.map(normalizeNoteDoc).filter((n) => n.id) : [],
+    };
+  } catch {
+    return { activeId: '', notes: [] };
+  }
+}
+
+async function saveNoteIndex(paperId, index) {
+  const dir = await getNotesDir(paperId, true);
+  const notes = (index.notes || []).map(normalizeNoteDoc).filter((n) => n.id && !n.legacy);
+  await writeFile(dir, 'index.json', JSON.stringify({
+    activeId: index.activeId || notes[0]?.id || '',
+    notes,
+  }, null, 2));
+}
+
+function makeNoteId() {
+  return 'note_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+}
+
+async function hasLegacyNote(paperId) {
+  const text = await loadLegacyNote(paperId).catch(() => null);
+  return Boolean(text?.trim());
+}
+
+export async function listNoteDocs(paperId) {
+  const index = await loadNoteIndex(paperId);
+  const notes = [...index.notes];
+  if (await hasLegacyNote(paperId)) {
+    notes.unshift({
+      id: LEGACY_NOTE_ID,
+      title: '旧版阅读笔记',
+      templateId: 'legacy',
+      templateName: '旧版单篇笔记',
+      createdAt: 0,
+      updatedAt: 0,
+      legacy: true,
+    });
+  }
+  const activeExists = notes.some((note) => note.id === index.activeId);
+  return {
+    activeId: activeExists ? index.activeId : (notes[0]?.id || ''),
+    notes,
+  };
+}
+
+export async function createNoteDoc(paperId, meta = {}, text = '') {
+  const index = await loadNoteIndex(paperId);
+  const now = Date.now();
+  const doc = normalizeNoteDoc({
+    id: makeNoteId(),
+    title: meta.title || meta.templateName || '阅读笔记',
+    templateId: meta.templateId || '',
+    templateName: meta.templateName || '',
+    createdAt: now,
+    updatedAt: now,
+  });
+  const dir = await getNotesDir(paperId, true);
+  await writeFile(dir, `${doc.id}.md`, text || '');
+  index.notes.push(doc);
+  index.activeId = doc.id;
+  await saveNoteIndex(paperId, index);
+  return doc;
+}
+
+export async function loadNoteDoc(paperId, noteId) {
+  if (!noteId || noteId === LEGACY_NOTE_ID) return loadLegacyNote(paperId);
+  const dir = await getNotesDir(paperId);
+  return readFileText(dir, `${noteId}.md`);
+}
+
+export async function saveNoteDoc(paperId, noteId, text, patch = {}) {
+  if (!noteId || noteId === LEGACY_NOTE_ID) {
+    await saveNote(paperId, text);
+    return normalizeNoteDoc({
+      id: LEGACY_NOTE_ID,
+      title: patch.title || '旧版阅读笔记',
+      templateId: 'legacy',
+      templateName: '旧版单篇笔记',
+      legacy: true,
+    });
+  }
+
+  const index = await loadNoteIndex(paperId);
+  const now = Date.now();
+  let doc = index.notes.find((item) => item.id === noteId);
+  if (!doc) {
+    doc = normalizeNoteDoc({
+      id: noteId,
+      title: patch.title || patch.templateName || '阅读笔记',
+      templateId: patch.templateId || '',
+      templateName: patch.templateName || '',
+      createdAt: now,
+    });
+    index.notes.push(doc);
+  }
+  Object.assign(doc, {
+    ...patch,
+    id: noteId,
+    updatedAt: now,
+    legacy: false,
+  });
+  const dir = await getNotesDir(paperId, true);
+  await writeFile(dir, `${noteId}.md`, text);
+  index.activeId = noteId;
+  await saveNoteIndex(paperId, index);
+  return normalizeNoteDoc(doc);
+}
+
+export async function deleteNoteDoc(paperId, noteId) {
+  if (!noteId) return;
+  if (noteId === LEGACY_NOTE_ID) {
+    const dir = await getPaperDir(paperId);
+    try { await dir.removeEntry('note.md'); } catch { /* 忽略 */ }
+    const index = await loadNoteIndex(paperId);
+    if (index.activeId === LEGACY_NOTE_ID) {
+      index.activeId = index.notes[0]?.id || '';
+      await saveNoteIndex(paperId, index);
+    }
+    return;
+  }
+
+  const index = await loadNoteIndex(paperId);
+  index.notes = index.notes.filter((note) => note.id !== noteId);
+  if (index.activeId === noteId) index.activeId = index.notes[0]?.id || '';
+  try {
+    const dir = await getNotesDir(paperId);
+    await dir.removeEntry(`${noteId}.md`);
+  } catch { /* 忽略 */ }
+  await saveNoteIndex(paperId, index);
+}
+
+export async function setActiveNoteDoc(paperId, noteId) {
+  if (!noteId) return;
+  const index = await loadNoteIndex(paperId);
+  if (noteId === LEGACY_NOTE_ID) {
+    index.activeId = LEGACY_NOTE_ID;
+    await saveNoteIndex(paperId, index);
+    return;
+  }
+  if (!index.notes.some((note) => note.id === noteId)) return;
+  index.activeId = noteId;
+  await saveNoteIndex(paperId, index);
 }
 
 // ---------- 目录树 ----------

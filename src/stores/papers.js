@@ -295,11 +295,15 @@ export const usePapersStore = defineStore('papers', {
       await this.refresh();
     },
 
-    beginNoteGeneration(paperId) {
+    beginNoteGeneration(paperId, meta = {}) {
       this.noteTasks[paperId] = {
         generating: true,
         stream: '',
         error: '',
+        noteId: meta.noteId || '',
+        noteTitle: meta.noteTitle || '',
+        templateId: meta.templateId || '',
+        templateName: meta.templateName || '',
         updatedAt: Date.now(),
       };
     },

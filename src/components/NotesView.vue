@@ -1,6 +1,23 @@
 <template>
   <div class="notes-wrap">
     <div class="notes-toolbar">
+      <select
+        v-model="activeNoteId"
+        class="note-select"
+        :disabled="generating"
+        @change="selectActiveNote"
+      >
+        <option v-if="!noteDocs.length" value="">尚无笔记</option>
+        <option v-for="note in noteDocs" :key="note.id" :value="note.id">
+          {{ noteTitle(note) }}
+        </option>
+      </select>
+      <button class="btn small" :disabled="generating || !papers.currentId" @click="createNoteFromTemplate()">新建笔记</button>
+      <button
+        class="btn small danger-lite"
+        :disabled="generating || !activeNoteId"
+        @click="deleteCurrentNote"
+      >删除</button>
       <span class="notes-status">{{ statusText }}</span>
       <select
         v-model="cfg.activeNoteTemplateId"
@@ -94,6 +111,8 @@ const emit = defineEmits(['askImage', 'askText']);
 const toast = inject('toast');
 
 const noteText = ref('');
+const noteDocs = ref([]);
+const activeNoteId = ref('');
 const mode = ref('edit');
 const statusText = ref('');
 const previewEl = ref(null);
@@ -109,6 +128,13 @@ const currentNoteTask = computed(() => papers.currentId ? papers.noteTask(papers
 const generating = computed(() => Boolean(currentNoteTask.value?.generating));
 const streamText = computed(() => currentNoteTask.value?.stream || '');
 const currentTemplate = computed(() => cfg.currentNoteTemplate);
+const currentNoteDoc = computed(() => noteDocs.value.find((note) => note.id === activeNoteId.value) || null);
+
+function noteTitle(note) {
+  if (!note) return '阅读笔记';
+  const suffix = note.templateName ? ` · ${note.templateName}` : '';
+  return `${note.title || '阅读笔记'}${suffix}`;
+}
 
 function extractOutline() {
   if (!previewEl.value) return [];
@@ -129,25 +155,53 @@ function scrollToHeading(id) {
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// 切换论文时加载对应笔记（后台生成不受影响）
+async function refreshNoteDocs(preferredId = '') {
+  if (!papers.currentId) {
+    noteDocs.value = [];
+    activeNoteId.value = '';
+    return;
+  }
+  const result = await store.listNoteDocs(papers.currentId).catch(() => ({ activeId: '', notes: [] }));
+  noteDocs.value = result.notes || [];
+  const preferredExists = preferredId && noteDocs.value.some((note) => note.id === preferredId);
+  activeNoteId.value = preferredExists ? preferredId : (result.activeId || noteDocs.value[0]?.id || '');
+}
+
+async function loadActiveNoteText() {
+  if (!papers.currentId || !activeNoteId.value) {
+    noteText.value = '';
+    mode.value = 'edit';
+    statusText.value = papers.currentId ? '当前论文还没有笔记' : '';
+    return;
+  }
+  const loadForPaper = papers.currentId;
+  const loadForNote = activeNoteId.value;
+  const saved = await store.loadNoteDoc(loadForPaper, loadForNote).catch(() => null);
+  if (papers.currentId !== loadForPaper || activeNoteId.value !== loadForNote) return;
+  noteText.value = saved || '';
+  mode.value = saved ? 'preview' : 'edit';
+  statusText.value = saved ? `已加载：${noteTitle(currentNoteDoc.value)}` : '新笔记，可直接编辑或生成';
+}
+
+// 切换论文时加载对应笔记列表（后台生成不受影响）
 watch(() => papers.currentId, async (id) => {
   noteText.value = '';
+  noteDocs.value = [];
+  activeNoteId.value = '';
   statusText.value = '';
   if (!id) return;
   // 若正在为当前论文生成，显示进行中状态即可
   const task = papers.noteTask(id);
+  await refreshNoteDocs(task?.noteId || '');
   if (task?.generating) {
-    statusText.value = '正在生成...';
+    statusText.value = task.templateName ? `正在按「${task.templateName}」生成...` : '正在生成...';
     mode.value = 'preview';
     await nextTick();
     scheduleStreamRender(task.stream || '', id);
     return;
   }
-  const saved = await store.loadNote(id).catch(() => null);
-  if (papers.currentId !== id) return;
-  noteText.value = saved || '';
-  statusText.value = task?.error ? `生成失败：${task.error}` : (saved ? '已加载已保存笔记' : '');
-  mode.value = saved ? 'preview' : 'edit';
+  if (task?.error) statusText.value = `生成失败：${task.error}`;
+  await loadActiveNoteText();
 }, { immediate: true });
 
 // 流式生成中：只有当前论文就是生成目标时才更新 DOM
@@ -249,8 +303,48 @@ function onTemplateChange() {
   cfg.save();
 }
 
-function applyCurrentTemplate() {
+async function selectActiveNote() {
   if (!papers.currentId) return;
+  await store.setActiveNoteDoc(papers.currentId, activeNoteId.value).catch(() => {});
+  await loadActiveNoteText();
+}
+
+function noteMetaFromTemplate(template = currentTemplate.value) {
+  return {
+    title: template?.name || '阅读笔记',
+    templateId: template?.id || '',
+    templateName: template?.name || '',
+  };
+}
+
+async function createNoteFromTemplate(options = {}) {
+  if (!papers.currentId) return null;
+  const template = currentTemplate.value;
+  const initialText = options.empty ? '' : renderNoteTemplate(template?.content);
+  const doc = await store.createNoteDoc(papers.currentId, noteMetaFromTemplate(template), initialText);
+  await refreshNoteDocs(doc.id);
+  noteText.value = initialText;
+  mode.value = 'edit';
+  statusText.value = `已新建：${noteTitle(doc)}`;
+  return doc;
+}
+
+async function deleteCurrentNote() {
+  if (!papers.currentId || !activeNoteId.value) return;
+  const title = noteTitle(currentNoteDoc.value);
+  if (!window.confirm(`确认删除「${title}」？此操作不可恢复。`)) return;
+  await store.deleteNoteDoc(papers.currentId, activeNoteId.value);
+  await refreshNoteDocs();
+  await loadActiveNoteText();
+  statusText.value = '笔记已删除';
+}
+
+async function applyCurrentTemplate() {
+  if (!papers.currentId) return;
+  if (!activeNoteId.value) {
+    await createNoteFromTemplate();
+    return;
+  }
   if (noteText.value.trim() && !window.confirm('当前笔记已有内容，套用模板会覆盖编辑区内容，是否继续？')) return;
   noteText.value = renderNoteTemplate(currentTemplate.value?.content);
   mode.value = 'edit';
@@ -286,6 +380,21 @@ async function generate() {
   }
 
   const selectedTemplate = currentTemplate.value;
+  let targetDoc = currentNoteDoc.value;
+  if (!targetDoc) {
+    targetDoc = await createNoteFromTemplate({ empty: true });
+  } else if (
+    noteText.value.trim()
+    && targetDoc.templateId
+    && selectedTemplate?.id
+    && targetDoc.templateId !== selectedTemplate.id
+  ) {
+    targetDoc = await createNoteFromTemplate({ empty: true });
+  } else if (noteText.value.trim() && !window.confirm('当前笔记已有内容，重新生成会覆盖当前笔记，是否继续？')) {
+    return;
+  }
+  if (!targetDoc) return;
+
   const template = renderNoteTemplate(selectedTemplate?.content);
   const templatePrompt = selectedTemplate?.prompt || '请按模板生成结构化阅读笔记。';
 
@@ -302,7 +411,13 @@ ${template}
 论文内容（Markdown 格式）：
 ${paperMd}`;
 
-  papers.beginNoteGeneration(generatingFor);
+  const targetNoteId = targetDoc.id;
+  papers.beginNoteGeneration(generatingFor, {
+    noteId: targetNoteId,
+    noteTitle: targetDoc.title,
+    templateId: selectedTemplate?.id || '',
+    templateName: selectedTemplate?.name || '',
+  });
   statusText.value = `正在按「${selectedTemplate?.name || '自定义模板'}」生成...`;
   mode.value = 'preview';
   noteAbortController = new AbortController();
@@ -312,9 +427,10 @@ ${paperMd}`;
       papers.appendNoteStream(generatingFor, chunk);
     }, { signal: noteAbortController.signal });
     const note = typeof result === 'string' ? result : result.content;
-    await store.saveNote(generatingFor, note);
+    await store.saveNoteDoc(generatingFor, targetNoteId, note, noteMetaFromTemplate(selectedTemplate));
     papers.finishNoteGeneration(generatingFor);
     if (papers.currentId === generatingFor) {
+      await refreshNoteDocs(targetNoteId);
       noteText.value = note;
       mode.value = 'preview';
       statusText.value = '生成完成，可继续编辑';
@@ -322,9 +438,10 @@ ${paperMd}`;
   } catch (e) {
     if (agent.isAbortError(e)) {
       const partial = papers.noteTask(generatingFor)?.stream || '';
-      if (partial.trim()) await store.saveNote(generatingFor, partial);
+      if (partial.trim()) await store.saveNoteDoc(generatingFor, targetNoteId, partial, noteMetaFromTemplate(selectedTemplate));
       papers.finishNoteGeneration(generatingFor);
       if (papers.currentId === generatingFor) {
+        await refreshNoteDocs(targetNoteId);
         noteText.value = partial;
         mode.value = partial.trim() ? 'preview' : 'edit';
         statusText.value = partial.trim() ? '已停止，已保留当前内容' : '已停止';
@@ -345,7 +462,16 @@ ${paperMd}`;
 
 async function save() {
   if (!papers.currentId) return;
-  await store.saveNote(papers.currentId, noteText.value);
+  let noteId = activeNoteId.value;
+  const draft = noteText.value;
+  if (!noteId) {
+    const doc = await createNoteFromTemplate({ empty: true });
+    noteId = doc?.id || '';
+    noteText.value = draft;
+  }
+  if (!noteId) return;
+  await store.saveNoteDoc(papers.currentId, noteId, draft, currentNoteDoc.value || noteMetaFromTemplate());
+  await refreshNoteDocs(noteId);
   statusText.value = '已保存';
 }
 
@@ -484,6 +610,7 @@ async function copyAsPlainText() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.note-select,
 .template-select {
   width: 150px;
   max-width: 20vw;
@@ -495,6 +622,10 @@ async function copyAsPlainText() {
   color: var(--text);
   font-size: 13px;
 }
+.note-select {
+  width: 190px;
+}
+.note-select:disabled,
 .template-select:disabled {
   opacity: 0.55;
   cursor: not-allowed;

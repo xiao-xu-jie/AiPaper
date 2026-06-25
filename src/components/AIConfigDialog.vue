@@ -178,7 +178,10 @@
 import { computed, ref, watch, nextTick } from 'vue';
 import { useConfigStore } from '../stores/config.js';
 
-const props = defineProps({ modelValue: Boolean });
+const props = defineProps({
+  modelValue: Boolean,
+  initialTemplateOpen: Boolean,
+});
 const emit = defineEmits(['update:modelValue']);
 
 const cfg = useConfigStore();
@@ -209,6 +212,12 @@ watch(
   () => cfg.noteTemplates,
   () => { dirty.value = true; },
   { deep: true }
+);
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (open && props.initialTemplateOpen) showTemplate.value = true;
+  }
 );
 
 function close() {

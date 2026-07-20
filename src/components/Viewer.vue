@@ -10,8 +10,10 @@
           阅读笔记<span v-if="papers.isNoteGenerating(papers.currentId)" class="tab-badge">●</span>
         </button>
       </div>
-      <button v-if="paper && view === 'md'" class="btn small" title="下载 Markdown" @click="downloadMarkdown">⬇ 下载</button>
-      <button v-if="paper && view === 'notes'" class="btn small" title="下载阅读笔记" @click="downloadNote">⬇ 下载</button>
+      <div class="viewer-download-slot">
+        <button v-show="paper && view === 'md'" class="btn small" title="下载 Markdown" @click="downloadMarkdown">⬇ 下载</button>
+        <button v-show="paper && view === 'notes'" class="btn small" title="下载阅读笔记" @click="downloadNote">⬇ 下载</button>
+      </div>
       <button class="btn small" @click="$emit('toggleChat')">💬 AI 助手</button>
     </div>
 
@@ -822,13 +824,80 @@ function onNotesAskText(text) {
   opacity: 1;
 }
 .viewer-head {
-  display: flex; align-items: center; gap: 16px;
-  padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--panel); flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 18px;
+  min-height: 58px;
+  padding: 0 24px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+  flex-shrink: 0;
 }
-.viewer-title { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
-.view-tabs { display: flex; gap: 4px; background: #eef0f2; padding: 3px; border-radius: 8px; }
-.tab { border: none; background: transparent; padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; color: var(--muted); }
-.tab.active { background: #fff; color: var(--text); box-shadow: var(--shadow); }
+.viewer-title {
+  align-self: center;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.view-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  overflow: visible;
+  flex-shrink: 0;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+.tab {
+  position: relative;
+  border: none;
+  background: transparent;
+  min-width: 82px;
+  padding: 0 14px;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  white-space: nowrap;
+  transition: color .16s ease, background .16s ease;
+}
+.tab:hover {
+  background: #f5f8ff;
+  color: #2563eb;
+}
+.tab.active {
+  background: #eff6ff;
+  color: #2563eb;
+  box-shadow: none;
+}
+.tab.active::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 3px;
+  border-radius: 999px 999px 0 0;
+  background: #3b82f6;
+  box-shadow: 0 -1px 8px rgba(59, 130, 246, .22);
+}
+.viewer-head > .btn {
+  align-self: center;
+}
+.viewer-download-slot {
+  align-self: center;
+  display: flex;
+  justify-content: flex-end;
+  flex: 0 0 66px;
+}
+.viewer-download-slot .btn {
+  width: 66px;
+}
 .tab-badge { color: var(--orange); font-size: 10px; margin-left: 3px; animation: blink .8s step-end infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 .status-bar {

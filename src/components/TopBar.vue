@@ -5,15 +5,17 @@
       <span class="title">AI Paper</span>
       <span class="subtitle">MinerU 在线解析</span>
     </div>
-    <button class="btn secondary" @click="showMinerUConfig = true">⚙️ MinerU</button>
-    <button class="btn secondary" @click="openAIConfig">🤖 AI 模型</button>
-    <button class="btn secondary" @click="openTemplateConfig">📝 笔记模板</button>
-    <button class="btn secondary" @click="showTagManager = true">🏷 标签管理</button>
-    <button class="btn secondary" @click="showExtensions = true">🧩 扩展</button>
-    <button class="btn secondary" @click="showHelp = true">❓ 帮助</button>
-    <button v-if="isElectron" class="btn secondary" @click="handleCheckUpdate">🔄 检查更新</button>
-    <button v-if="!isElectron" class="btn secondary" @click="goToDownload">📥 下载客户端</button>
-    <button class="btn primary" @click="$emit('upload')">＋ 上传 PDF</button>
+    <nav class="topbar-actions" aria-label="应用工具">
+      <button class="btn secondary topbar-action" @click="showMinerUConfig = true">⚙️ MinerU</button>
+      <button class="btn secondary topbar-action" @click="openAIConfig">🤖 AI 模型</button>
+      <button class="btn secondary topbar-action" @click="openTemplateConfig">📝 笔记模板</button>
+      <button class="btn secondary topbar-action" @click="showTagManager = true">🏷 标签管理</button>
+      <button class="btn secondary topbar-action" @click="showExtensions = true">🧩 扩展</button>
+      <button class="btn secondary topbar-action" @click="showHelp = true">❓ 帮助</button>
+      <button v-if="isElectron" class="btn secondary topbar-action" @click="handleCheckUpdate">🔄 检查更新</button>
+      <button v-if="!isElectron" class="btn secondary topbar-action" @click="goToDownload">📥 下载客户端</button>
+    </nav>
+    <button class="btn primary topbar-upload" @click="$emit('upload')">＋ 上传 PDF</button>
   </header>
 
   <MinerUConfigDialog v-model="showMinerUConfig" @pickDir="$emit('pickDir')" />
@@ -315,18 +317,98 @@ function goToDownload() {
 
 <style scoped>
 .topbar {
-  display: flex; align-items: center; gap: 16px;
-  padding: 12px 20px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 58px;
+  padding: 8px 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .98), rgba(249, 250, 252, .96));
+  border-bottom: 1px solid #e7eaf0;
   flex-shrink: 0;
 }
-.brand { display: flex; align-items: center; gap: 8px; }
-.logo { height: 28px; width: auto; }
-.title { font-size: 18px; font-weight: 700; }
-.subtitle { font-size: 13px; font-weight: 400; color: var(--muted); }
-.topbar .btn { margin-left: 8px; }
-.topbar .btn.primary { margin-left: auto; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 216px;
+  padding-right: 4px;
+}
+.logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  object-fit: cover;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .14);
+}
+.title {
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+.subtitle {
+  font-size: 12px;
+  font-weight: 400;
+  color: #8a93a3;
+  white-space: nowrap;
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid rgba(226, 232, 240, .9);
+  border-radius: 13px;
+  background: rgba(248, 250, 252, .72);
+}
+.topbar .btn {
+  margin-left: 0;
+}
+.topbar-action {
+  height: 34px;
+  padding: 0 11px;
+  border-color: transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #4b5563;
+  font-size: 13px;
+  font-weight: 520;
+  white-space: nowrap;
+}
+.topbar-action:hover {
+  background: #fff;
+  border-color: #e5e7eb;
+  color: #1f2937;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, .08);
+}
+.topbar .topbar-upload {
+  margin-left: auto;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3451d1, #4965e6);
+  box-shadow: 0 8px 18px rgba(59, 91, 219, .22);
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.topbar-upload:hover {
+  background: linear-gradient(135deg, #2f49b0, #3f5bd8);
+  box-shadow: 0 10px 22px rgba(59, 91, 219, .26);
+}
+@media (max-width: 1180px) {
+  .brand {
+    min-width: auto;
+  }
+  .subtitle {
+    display: none;
+  }
+  .topbar-action {
+    padding: 0 9px;
+  }
+}
 .tag-manager-overlay {
   position: fixed; inset: 0; z-index: 1000;
   background: rgba(0, 0, 0, 0.5);

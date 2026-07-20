@@ -1,0 +1,10 @@
+services:
+  aipaper:
+    image: ${AIPAPER_IMAGE:-aipaper:latest}
+    container_name: aipaper
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8788
+    ports:
+      - "${AIPAPER_PORT:-8788}:8788"

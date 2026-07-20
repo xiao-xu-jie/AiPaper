@@ -19,13 +19,13 @@ export function isAbortError(error) {
   return error?.name === 'AbortError' || /aborted|abort|取消/i.test(String(error?.message || ''));
 }
 
-function buildSystemContent(extraContexts = []) {
+function buildSystemContent(extraContexts = [], currentMd = paperMd) {
   const validExtra = extraContexts.filter((ctx) => ctx?.md);
-  if (!paperMd && !validExtra.length) return '你是一个学术助手，请帮助用户理解和分析论文内容。';
+  if (!currentMd && !validExtra.length) return '你是一个学术助手，请帮助用户理解和分析论文内容。';
 
   const sections = [];
-  if (paperMd) {
-    sections.push(`【当前论文】\n${paperMd}`);
+  if (currentMd) {
+    sections.push(`【当前论文】\n${currentMd}`);
   }
   validExtra.forEach((ctx, idx) => {
     sections.push(`【引用论文 ${idx + 1}：${ctx.title || '未命名论文'}】\n${ctx.md}`);
@@ -53,7 +53,8 @@ export async function chat(history, userMsg, images = [], onChunk, options = {})
       ]
     : userMsg;
 
-  const systemContent = buildSystemContent(options.extraContexts || []);
+  const systemContent = options.systemPrompt
+    || buildSystemContent(options.extraContexts || [], options.includeCurrentContext === false ? '' : paperMd);
 
   const messages = [
     { role: 'system', content: systemContent },

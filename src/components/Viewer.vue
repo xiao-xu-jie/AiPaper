@@ -14,6 +14,21 @@
         <button v-show="paper && view === 'md'" class="btn small" title="下载 Markdown" @click="downloadMarkdown">⬇ 下载</button>
         <button v-show="paper && view === 'notes'" class="btn small" title="下载阅读笔记" @click="downloadNote">⬇ 下载</button>
       </div>
+      <div v-if="paper && view === 'md'" class="viewer-md-tools">
+        <button
+          class="btn small"
+          :disabled="fullTranslation.generating || paper.state !== 'done'"
+          :title="fullTranslation.text ? '重新生成全文译文' : '一键翻译全文'"
+          @click="fullTranslation.text ? translateFullMarkdown(true) : translateFullMarkdown(false)"
+        >{{ fullTranslation.text ? '重新翻译' : '全文翻译' }}</button>
+        <button
+          v-if="fullTranslation.text || fullTranslation.generating"
+          class="btn small"
+          :class="{ primary: fullTranslation.show }"
+          title="左右对照查看原文和译文"
+          @click="toggleFullTranslationPane"
+        >{{ fullTranslation.show ? '关闭对照' : '左右对照' }}</button>
+      </div>
       <button class="btn small" @click="$emit('toggleChat')">💬 AI 助手</button>
     </div>
 
@@ -38,11 +53,34 @@
         </nav>
       </aside>
       <button v-if="view === 'md' && !showOutline && outline.length" class="outline-show-btn" @click="showOutline = true">☰ 目录</button>
-      <article v-show="view === 'md'" ref="mdBox" class="md-view markdown-body" @contextmenu="onContextMenu" @mouseover="onHover" @mouseout="clearHover">
-        <div v-if="!paper" class="placeholder">选择或上传一篇论文以查看解析结果</div>
-        <div v-else-if="paper.state === 'failed'" class="placeholder error">解析失败：{{ paper.error }}</div>
-        <div v-else-if="paper.state !== 'done'" class="placeholder">解析完成后将在此显示 Markdown 内容</div>
-      </article>
+      <div v-show="view === 'md'" class="md-workspace" :class="{ comparing: fullTranslation.show }">
+        <article
+          ref="mdBox"
+          class="md-view markdown-body"
+          @contextmenu="onContextMenu"
+          @mouseover="onHover"
+          @mouseout="clearHover"
+          @scroll="syncTranslationScroll('source')"
+        >
+          <div v-if="!paper" class="placeholder">选择或上传一篇论文以查看解析结果</div>
+          <div v-else-if="paper.state === 'failed'" class="placeholder error">解析失败：{{ paper.error }}</div>
+          <div v-else-if="paper.state !== 'done'" class="placeholder">解析完成后将在此显示 Markdown 内容</div>
+        </article>
+        <section v-if="fullTranslation.show" class="full-translation-pane">
+          <div class="full-translation-head">
+            <div>
+              <span class="full-translation-kicker">全文译文</span>
+              <strong>{{ fullTranslation.generating ? fullTranslation.status : (fullTranslation.status || '中文对照') }}</strong>
+            </div>
+            <div class="full-translation-actions">
+              <button v-if="fullTranslation.generating" class="btn small danger" @click="cancelFullTranslation">停止</button>
+              <button class="btn small" :disabled="!fullTranslation.text" @click="copyFullTranslation">复制</button>
+              <button class="btn small" :disabled="!fullTranslation.text && !fullTranslation.generating" @click="clearFullTranslation">清除</button>
+            </div>
+          </div>
+          <article ref="translationBox" class="full-translation-body markdown-body" @scroll="syncTranslationScroll('translation')" />
+        </section>
+      </div>
       <div v-show="view === 'pdf'" class="pdf-wrap">
         <iframe ref="pdfFrame" title="PDF 预览" />
       </div>
@@ -122,6 +160,7 @@ const toast = inject('toast', () => {});
 const emit = defineEmits(['toggleChat', 'askImage', 'askText']);
 const view = ref('md');
 const mdBox = ref(null);
+const translationBox = ref(null);
 const pdfFrame = ref(null);
 const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '', hasSelection: false });
 const preview = reactive({ show: false, src: '' });
@@ -130,6 +169,22 @@ const outline = ref([]);
 const translations = ref([]);
 const annotations = ref([]);
 let restoreDecorationsTask = null;
+let fullTranslationRenderTimer = null;
+let fullTranslationRenderSeq = 0;
+let syncingTranslationScroll = false;
+
+const FULL_TRANSLATION_ID = 'full-doc-translation';
+const FULL_TRANSLATION_CHUNK_SIZE = 9000;
+const fullTranslation = reactive({
+  show: false,
+  generating: false,
+  text: '',
+  status: '',
+  error: '',
+  sourceHash: '',
+  partial: false,
+  abortController: null,
+});
 
 const highlightColors = [
   { id: 'yellow', name: '黄色', bg: '#fff3b0', mark: '#ffd54f' },
@@ -144,6 +199,253 @@ const noteEditorArea = ref(null);
 
 const paper = computed(() => papers.currentPaper);
 const title = computed(() => paper.value?.title || '未选择论文');
+
+function hashText(text) {
+  const value = String(text || '');
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${value.length}-${(hash >>> 0).toString(36)}`;
+}
+
+function splitMarkdownForTranslation(markdown, maxSize = FULL_TRANSLATION_CHUNK_SIZE) {
+  const lines = String(markdown || '').split(/\r?\n/);
+  const chunks = [];
+  let current = [];
+  let size = 0;
+
+  function flush() {
+    const text = current.join('\n').trim();
+    if (text) chunks.push(text);
+    current = [];
+    size = 0;
+  }
+
+  for (const line of lines) {
+    const nextSize = size + line.length + 1;
+    const shouldSplit = current.length
+      && nextSize > maxSize
+      && (/^#{1,6}\s+\S/.test(line) || line.trim() === '' || size > maxSize * 1.15);
+    if (shouldSplit) flush();
+    current.push(line);
+    size += line.length + 1;
+    if (size > maxSize * 1.35) flush();
+  }
+  flush();
+  return chunks;
+}
+
+function fullTranslationSystemPrompt() {
+  return '你是专业学术论文翻译助手。请忠实翻译论文 Markdown，保持学术准确性、术语一致性和原有 Markdown 结构。';
+}
+
+function fullTranslationPrompt(chunk, index, total) {
+  const header = total > 1 ? `这是论文 Markdown 的第 ${index + 1}/${total} 段。` : '这是论文 Markdown 全文。';
+  return `${header}
+
+请将下面内容翻译为中文。要求：
+- 保留 Markdown 标题层级、列表、表格、引用、公式、图片链接和代码块格式。
+- 代码块内容、URL、图片路径、公式符号不要翻译。
+- 只输出译文，不要解释。
+
+--- 待翻译 Markdown ---
+${chunk}`;
+}
+
+function getFullTranslationRecord() {
+  return translations.value.find((item) => item?.type === 'full' || item?.id === FULL_TRANSLATION_ID) || null;
+}
+
+function applySavedFullTranslation(markdown) {
+  const record = getFullTranslationRecord();
+  const sourceHash = hashText(markdown || '');
+  fullTranslation.sourceHash = record?.sourceHash || '';
+  fullTranslation.text = record?.translation || '';
+  fullTranslation.partial = Boolean(record?.partial);
+  fullTranslation.error = '';
+  if (!record?.translation) {
+    fullTranslation.status = '';
+  } else if (record.sourceHash && record.sourceHash !== sourceHash) {
+    fullTranslation.status = '已有译文，原文可能已变化';
+  } else if (record.partial) {
+    fullTranslation.status = '已有部分译文';
+  } else {
+    fullTranslation.status = '已有全文译文';
+  }
+}
+
+async function persistFullTranslation(markdown, partial = false) {
+  const rest = translations.value.filter((item) => item?.type !== 'full' && item?.id !== FULL_TRANSLATION_ID);
+  const text = fullTranslation.text.trim();
+  if (text) {
+    rest.push({
+      id: FULL_TRANSLATION_ID,
+      type: 'full',
+      anchorText: '',
+      translation: text,
+      sourceHash: hashText(markdown || ''),
+      partial,
+      updatedAt: Date.now(),
+    });
+  }
+  translations.value = rest;
+  await store.saveTranslations(papers.currentId, translations.value);
+}
+
+function clearFullTranslationRenderTimer() {
+  if (fullTranslationRenderTimer) {
+    clearTimeout(fullTranslationRenderTimer);
+    fullTranslationRenderTimer = null;
+  }
+}
+
+function renderFullTranslationPlaceholder(message = '点击“全文翻译”生成中文译文。') {
+  if (!translationBox.value) return;
+  cleanupMarkdownRender(translationBox.value);
+  translationBox.value.innerHTML = `<div class="full-translation-empty">${message}</div>`;
+}
+
+function scheduleFullTranslationRender({ final = false } = {}) {
+  clearFullTranslationRenderTimer();
+  const seq = ++fullTranslationRenderSeq;
+  const delay = final ? 0 : (fullTranslation.text.length > 80000 ? 360 : 160);
+  fullTranslationRenderTimer = setTimeout(() => {
+    renderFullTranslationMarkdown(seq, final).catch(() => {});
+  }, delay);
+}
+
+async function renderFullTranslationMarkdown(seq = ++fullTranslationRenderSeq, final = false) {
+  if (seq !== fullTranslationRenderSeq || !translationBox.value) return;
+  const text = fullTranslation.text || '';
+  if (!text.trim()) {
+    renderFullTranslationPlaceholder(fullTranslation.generating ? '正在准备翻译...' : undefined);
+    return;
+  }
+  if (final) {
+    await renderMarkdown(translationBox.value, text, papers.currentId);
+  } else {
+    cleanupMarkdownRender(translationBox.value);
+    translationBox.value.innerHTML = parseMarkdown(`${text}\n\n<span class="cursor">▌</span>`);
+  }
+}
+
+async function toggleFullTranslationPane() {
+  if (fullTranslation.show) {
+    cleanupMarkdownRender(translationBox.value);
+    fullTranslation.show = false;
+    return;
+  }
+  fullTranslation.show = true;
+  await nextTick();
+  if (fullTranslation.text) scheduleFullTranslationRender({ final: !fullTranslation.generating });
+  else renderFullTranslationPlaceholder();
+}
+
+async function copyFullTranslation() {
+  if (!fullTranslation.text.trim()) return;
+  await navigator.clipboard.writeText(fullTranslation.text);
+  toast('全文译文已复制', 'success');
+}
+
+async function clearFullTranslation() {
+  cancelFullTranslation();
+  const md = await store.loadMarkdown(papers.currentId).catch(() => '');
+  fullTranslation.text = '';
+  fullTranslation.status = '';
+  fullTranslation.error = '';
+  fullTranslation.partial = false;
+  await persistFullTranslation(md || '', false).catch(() => {});
+  renderFullTranslationPlaceholder();
+  toast('已清除全文译文', 'success');
+}
+
+function cancelFullTranslation() {
+  fullTranslation.abortController?.abort();
+}
+
+function syncTranslationScroll(source) {
+  if (!fullTranslation.show || syncingTranslationScroll) return;
+  const from = source === 'translation' ? translationBox.value : mdBox.value;
+  const to = source === 'translation' ? mdBox.value : translationBox.value;
+  if (!from || !to) return;
+  const fromRange = from.scrollHeight - from.clientHeight;
+  const toRange = to.scrollHeight - to.clientHeight;
+  if (fromRange <= 0 || toRange <= 0) return;
+  syncingTranslationScroll = true;
+  to.scrollTop = (from.scrollTop / fromRange) * toRange;
+  requestAnimationFrame(() => { syncingTranslationScroll = false; });
+}
+
+async function translateFullMarkdown(force = false) {
+  const p = paper.value;
+  if (!p || p.state !== 'done') return;
+  if (!cfg.aiUrl || !cfg.aiModel) {
+    toast('请先配置 AI 接口地址和模型', 'error');
+    return;
+  }
+  if (fullTranslation.generating) return;
+
+  const md = await store.loadMarkdown(p.id).catch(() => '');
+  if (!md?.trim()) {
+    toast('该论文还没有 Markdown 内容', 'error');
+    return;
+  }
+  if (fullTranslation.text && !force) {
+    fullTranslation.show = true;
+    await nextTick();
+    scheduleFullTranslationRender({ final: true });
+    return;
+  }
+
+  const chunks = splitMarkdownForTranslation(md);
+  fullTranslation.show = true;
+  fullTranslation.generating = true;
+  fullTranslation.text = '';
+  fullTranslation.error = '';
+  fullTranslation.partial = false;
+  fullTranslation.sourceHash = hashText(md);
+  fullTranslation.abortController = new AbortController();
+  await nextTick();
+  renderFullTranslationPlaceholder('正在准备翻译...');
+
+  let completed = '';
+  try {
+    for (let i = 0; i < chunks.length; i++) {
+      let current = '';
+      fullTranslation.status = `翻译中 ${i + 1}/${chunks.length}`;
+      await agent.chat([], fullTranslationPrompt(chunks[i], i, chunks.length), [], (chunk) => {
+        current += chunk;
+        fullTranslation.text = `${completed}${current}`;
+        scheduleFullTranslationRender();
+      }, {
+        signal: fullTranslation.abortController.signal,
+        includeCurrentContext: false,
+        systemPrompt: fullTranslationSystemPrompt(),
+      });
+      completed = `${completed}${current.trim()}\n\n`;
+      fullTranslation.text = completed.trim();
+      await persistFullTranslation(md, i < chunks.length - 1);
+    }
+    fullTranslation.partial = false;
+    fullTranslation.status = '全文翻译完成';
+    await persistFullTranslation(md, false);
+    scheduleFullTranslationRender({ final: true });
+    toast('全文翻译完成', 'success');
+  } catch (e) {
+    const aborted = agent.isAbortError(e);
+    fullTranslation.partial = Boolean(fullTranslation.text.trim());
+    fullTranslation.status = aborted ? '已停止，保留已生成译文' : '全文翻译失败';
+    fullTranslation.error = aborted ? '' : (e?.message || String(e));
+    if (fullTranslation.text.trim()) await persistFullTranslation(md, true).catch(() => {});
+    scheduleFullTranslationRender({ final: true });
+    toast(aborted ? '已停止全文翻译' : `全文翻译失败：${fullTranslation.error}`, aborted ? 'info' : 'error');
+  } finally {
+    fullTranslation.generating = false;
+    fullTranslation.abortController = null;
+  }
+}
 
 function sanitizeFileName(name) {
   return String(name || '').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim() || '论文';
@@ -295,6 +597,7 @@ onMounted(async () => {
     mdBox.value.addEventListener('click', onImageClick);
     outline.value = extractOutline();
     translations.value = await store.loadTranslations(id).catch(() => []);
+    applySavedFullTranslation(md);
     annotations.value = await store.loadAnnotations(id).catch(() => []);
     scheduleRestoreDecorations(id);
   }
@@ -306,7 +609,10 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   cancelRestoreDecorations();
+  clearFullTranslationRenderTimer();
+  cancelFullTranslation();
   cleanupMarkdownRender(mdBox.value);
+  cleanupMarkdownRender(translationBox.value);
 });
 
 function onHover(e) {
@@ -453,7 +759,7 @@ function removeTranslation(id) {
 
 function restoreTranslationBlocks() {
   if (!mdBox.value || !translations.value.length) return;
-  translations.value.forEach((trans) => {
+  translations.value.filter((trans) => trans?.type !== 'full' && trans?.id !== FULL_TRANSLATION_ID).forEach((trans) => {
     const anchor = findAnchorElement(trans.anchorText);
     const block = createTranslationBlock(trans);
     renderTranslationBody(block, trans.translation);
@@ -898,6 +1204,24 @@ function onNotesAskText(text) {
 .viewer-download-slot .btn {
   width: 66px;
 }
+.viewer-md-tools {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.viewer-md-tools .btn.primary {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+.viewer-md-tools .btn.danger,
+.full-translation-actions .btn.danger {
+  background: #fee2e2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
 .tab-badge { color: var(--orange); font-size: 10px; margin-left: 3px; animation: blink .8s step-end infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 .status-bar {
@@ -943,6 +1267,17 @@ function onNotesAskText(text) {
   cursor: pointer; font-size: 13px; box-shadow: var(--shadow);
 }
 .outline-show-btn:hover { background: #f0f1f3; }
+.md-workspace {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  overflow: hidden;
+  background: #fff;
+}
+.md-workspace.comparing {
+  background: #f3f6fb;
+}
 .md-view {
   height: 100%;
   overflow-y: auto;
@@ -950,6 +1285,10 @@ function onNotesAskText(text) {
   background: #fff;
   line-height: 1.7;
   flex: 1;
+  min-width: 0;
+}
+.md-workspace.comparing .md-view {
+  border-right: 1px solid #dfe6f0;
 }
 .md-view .placeholder { color: var(--muted); text-align: center; margin-top: 80px; }
 .md-view .placeholder.error { color: var(--red); }
@@ -967,6 +1306,82 @@ function onNotesAskText(text) {
 }
 .pdf-wrap { height: 100%; flex: 1; background: #fff; }
 .pdf-wrap iframe { width: 100%; height: 100%; border: none; }
+.full-translation-pane {
+  width: min(50%, 760px);
+  min-width: 360px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fbfcff;
+}
+.full-translation-head {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e5eaf2;
+  background: rgba(255, 255, 255, .94);
+}
+.full-translation-head strong {
+  display: block;
+  margin-top: 2px;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 650;
+}
+.full-translation-kicker {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+.full-translation-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.full-translation-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 32px 40px;
+  line-height: 1.7;
+}
+.full-translation-body :deep(.full-translation-empty) {
+  margin: 72px auto 0;
+  max-width: 320px;
+  padding: 18px 20px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #fff;
+  color: #64748b;
+  text-align: center;
+  font-size: 13px;
+}
+.full-translation-body :deep(.cursor) {
+  animation: blink .7s step-end infinite;
+}
+@media (max-width: 1180px) {
+  .viewer-md-tools {
+    gap: 6px;
+  }
+  .md-workspace.comparing {
+    flex-direction: column;
+  }
+  .md-workspace.comparing .md-view {
+    height: 50%;
+    border-right: none;
+    border-bottom: 1px solid #dfe6f0;
+  }
+  .full-translation-pane {
+    width: 100%;
+    min-width: 0;
+    height: 50%;
+  }
+}
 .img-ctx-menu {
   position: fixed; z-index: 500;
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px;

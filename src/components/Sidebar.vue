@@ -1,11 +1,32 @@
 <template>
-  <aside class="sidebar" :style="{ width: width + 'px' }">
+  <aside
+    class="sidebar"
+    :class="{ collapsed: isCollapsed, dragging }"
+    :style="{ width: sidebarWidth + 'px' }"
+  >
     <div class="sidebar-head">
-      <span>论文库</span>
-      <button class="btn-icon" title="新建目录" @click="createFolder('root')">+</button>
+      <span v-if="!isCollapsed">论文库</span>
+      <div class="sidebar-head-actions">
+        <button
+          v-if="!isCollapsed"
+          class="btn-icon"
+          title="新建目录"
+          aria-label="新建目录"
+          @click="createFolder('root')"
+        >+</button>
+        <button
+          class="btn-icon collapse-toggle"
+          :title="isCollapsed ? '展开论文库' : '收起论文库'"
+          :aria-label="isCollapsed ? '展开论文库' : '收起论文库'"
+          :aria-expanded="!isCollapsed"
+          @click="toggleCollapsed"
+        >
+          <span aria-hidden="true">{{ isCollapsed ? '›' : '‹' }}</span>
+        </button>
+      </div>
     </div>
 
-    <div class="search-wrap">
+    <div v-show="!isCollapsed" class="search-wrap">
       <input
         v-model="searchText"
         class="paper-search"
@@ -73,11 +94,11 @@
       </div>
     </div>
 
-    <div class="tree-wrap">
+    <div v-show="!isCollapsed" class="tree-wrap">
       <FolderNode node-id="root" :depth="0" />
     </div>
   </aside>
-  <div class="resizer" :class="{ dragging }" @mousedown="startDrag" />
+  <div v-if="!isCollapsed" class="resizer" :class="{ dragging }" @mousedown="startDrag" />
 
   <Teleport to="body">
     <div v-if="renameTarget || createTarget" class="folder-dialog-backdrop" @click="cancelDialog">
@@ -350,7 +371,13 @@ const tagStore = useTagsStore();
 const cfg = useConfigStore();
 const toast = inject('toast', () => {});
 
-const width = ref(280);
+const SIDEBAR_STATE_KEY = 'aipaper.sidebarState';
+const MIN_SIDEBAR_WIDTH = 180;
+const DEFAULT_SIDEBAR_WIDTH = 280;
+const COLLAPSED_SIDEBAR_WIDTH = 42;
+const savedSidebarState = readSidebarState();
+const width = ref(savedSidebarState.width);
+const isCollapsed = ref(savedSidebarState.collapsed);
 const dragging = ref(false);
 const searchText = ref('');
 const selectedReadingStatus = ref('');
@@ -396,6 +423,9 @@ const aiRemarkPanel = ref({
   draft: '',
 });
 
+const sidebarWidth = computed(() => (
+  isCollapsed.value ? COLLAPSED_SIDEBAR_WIDTH : width.value
+));
 const allFolders = computed(() => Object.values(folders.tree));
 const currentRemarkPaper = computed(() => paperById(remarkTarget.value));
 const currentTagPaper = computed(() => paperById(tagTarget.value));
@@ -477,14 +507,45 @@ function showConfirm(msg, onOk) {
   confirmDialog.value = { show: true, msg, onOk };
 }
 
+function readSidebarState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SIDEBAR_STATE_KEY) || '{}');
+    return {
+      width: Math.max(MIN_SIDEBAR_WIDTH, Number(saved.width) || DEFAULT_SIDEBAR_WIDTH),
+      collapsed: saved.collapsed === true,
+    };
+  } catch {
+    return { width: DEFAULT_SIDEBAR_WIDTH, collapsed: false };
+  }
+}
+
+function saveSidebarState() {
+  try {
+    localStorage.setItem(SIDEBAR_STATE_KEY, JSON.stringify({
+      width: width.value,
+      collapsed: isCollapsed.value,
+    }));
+  } catch {
+    // Storage may be unavailable in strict privacy modes; the UI still works for this session.
+  }
+}
+
+function toggleCollapsed() {
+  isCollapsed.value = !isCollapsed.value;
+  saveSidebarState();
+}
+
 function startDrag(e) {
   e.preventDefault();
   const startX = e.clientX;
   const startW = width.value;
   dragging.value = true;
-  const onMove = (ev) => { width.value = Math.max(180, startW + (ev.clientX - startX)); };
+  const onMove = (ev) => {
+    width.value = Math.max(MIN_SIDEBAR_WIDTH, startW + (ev.clientX - startX));
+  };
   const onUp = () => {
     dragging.value = false;
+    saveSidebarState();
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
   };
@@ -1073,6 +1134,13 @@ onMounted(() => {
   flex-shrink: 0;
   min-width: 180px;
 }
+.sidebar:not(.dragging) {
+  transition: width .18s ease;
+}
+.sidebar.collapsed {
+  min-width: 42px;
+  border-right: 1px solid var(--border);
+}
 .sidebar-head {
   padding: 12px 16px;
   font-weight: 600;
@@ -1081,6 +1149,15 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.sidebar.collapsed .sidebar-head {
+  justify-content: center;
+  padding: 12px 8px;
+}
+.sidebar-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .search-wrap {
   padding: 10px 12px;
@@ -1133,6 +1210,9 @@ onMounted(() => {
   color: var(--primary);
   border-color: var(--border);
   background: #f6f7f9;
+}
+.collapse-toggle {
+  font-size: 22px;
 }
 .tag-filter {
   margin-top: 10px;

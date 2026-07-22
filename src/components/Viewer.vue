@@ -15,6 +15,18 @@
         <button v-show="paper && view === 'notes'" class="btn small" title="下载阅读笔记" @click="downloadNote">⬇ 下载</button>
       </div>
       <div v-if="paper && view === 'md'" class="viewer-md-tools">
+        <div v-if="fullTranslation.text || fullTranslation.generating" class="markdown-version-switch" role="group" aria-label="Markdown 阅读版本">
+          <button
+            :class="{ active: readingVersion === 'source' && !fullTranslation.show }"
+            :aria-pressed="readingVersion === 'source' && !fullTranslation.show"
+            @click="setReadingVersion('source')"
+          >原文</button>
+          <button
+            :class="{ active: readingVersion === 'translation' && !fullTranslation.show }"
+            :aria-pressed="readingVersion === 'translation' && !fullTranslation.show"
+            @click="setReadingVersion('translation')"
+          >译文</button>
+        </div>
         <button
           class="btn small"
           :disabled="fullTranslation.generating || paper.state !== 'done'"
@@ -25,7 +37,8 @@
           v-if="fullTranslation.text || fullTranslation.generating"
           class="btn small"
           :class="{ primary: fullTranslation.show }"
-          title="左右对照查看原文和译文"
+          :title="fullTranslation.show ? '关闭原文与译文对照' : '左右对照查看原文和译文'"
+          :aria-pressed="fullTranslation.show"
           @click="toggleFullTranslationPane"
         >{{ fullTranslation.show ? '关闭对照' : '左右对照' }}</button>
       </div>
@@ -35,6 +48,24 @@
     <div v-if="paper && paper.state !== 'done'" class="status-bar" :class="{ failed: paper.state === 'failed' }">
       <span>{{ paper.stateText || paper.state }}</span>
       <div class="progress"><div class="progress-fill" :style="{ width: (paper.progress || 0) + '%' }" /></div>
+    </div>
+
+    <div v-if="view === 'md' && markdownSearch.open" class="markdown-search-bar">
+      <span class="markdown-search-scope">{{ markdownSearch.version === 'translation' ? '译文' : '原文' }}</span>
+      <input
+        ref="markdownSearchInput"
+        v-model="markdownSearch.query"
+        type="search"
+        aria-label="搜索 Markdown 内容"
+        placeholder="搜索当前内容"
+        @input="updateMarkdownSearch"
+        @keydown.enter.prevent="moveMarkdownSearch($event.shiftKey ? -1 : 1)"
+        @keydown.esc.prevent="closeMarkdownSearch"
+      />
+      <span class="markdown-search-count">{{ markdownSearch.count ? `${markdownSearch.current + 1}/${markdownSearch.count}` : '0/0' }}</span>
+      <button type="button" title="上一个匹配项" aria-label="上一个匹配项" :disabled="!markdownSearch.count" @click="moveMarkdownSearch(-1)">↑</button>
+      <button type="button" title="下一个匹配项" aria-label="下一个匹配项" :disabled="!markdownSearch.count" @click="moveMarkdownSearch(1)">↓</button>
+      <button type="button" title="关闭搜索" aria-label="关闭搜索" @click="closeMarkdownSearch">×</button>
     </div>
 
     <div class="viewer-body">
@@ -53,10 +84,17 @@
         </nav>
       </aside>
       <button v-if="view === 'md' && !showOutline && outline.length" class="outline-show-btn" @click="showOutline = true">☰ 目录</button>
-      <div v-show="view === 'md'" class="md-workspace" :class="{ comparing: fullTranslation.show }">
+      <div
+        v-show="view === 'md'"
+        class="md-workspace"
+        :class="{ comparing: fullTranslation.show, 'translation-reading': readingVersion === 'translation' && !fullTranslation.show }"
+      >
         <article
+          v-show="fullTranslation.show || readingVersion === 'source'"
           ref="mdBox"
-          class="md-view markdown-body"
+          class="md-view markdown-body markdown-reader"
+          @pointerdown="setActiveMarkdownVersion('source')"
+          @click="onImageClick"
           @contextmenu="onContextMenu"
           @mouseover="onHover"
           @mouseout="clearHover"
@@ -66,10 +104,14 @@
           <div v-else-if="paper.state === 'failed'" class="placeholder error">解析失败：{{ paper.error }}</div>
           <div v-else-if="paper.state !== 'done'" class="placeholder">解析完成后将在此显示 Markdown 内容</div>
         </article>
-        <section v-if="fullTranslation.show" class="full-translation-pane">
+        <section
+          v-show="fullTranslation.show || readingVersion === 'translation'"
+          class="full-translation-pane"
+          :class="{ standalone: !fullTranslation.show }"
+        >
           <div class="full-translation-head">
             <div>
-              <span class="full-translation-kicker">全文译文</span>
+              <span class="full-translation-kicker">{{ fullTranslation.show ? '全文译文' : '译文阅读' }}</span>
               <strong>{{ fullTranslation.generating ? fullTranslation.status : (fullTranslation.status || '中文对照') }}</strong>
             </div>
             <div class="full-translation-actions">
@@ -78,7 +120,16 @@
               <button class="btn small" :disabled="!fullTranslation.text && !fullTranslation.generating" @click="clearFullTranslation">清除</button>
             </div>
           </div>
-          <article ref="translationBox" class="full-translation-body markdown-body" @scroll="syncTranslationScroll('translation')" />
+          <article
+            ref="translationBox"
+            class="full-translation-body markdown-body markdown-reader"
+            @pointerdown="setActiveMarkdownVersion('translation')"
+            @click="onImageClick"
+            @contextmenu="onContextMenu"
+            @mouseover="onHover"
+            @mouseout="clearHover"
+            @scroll="syncTranslationScroll('translation')"
+          />
         </section>
       </div>
       <div v-show="view === 'pdf'" class="pdf-wrap">
@@ -101,8 +152,8 @@
       <button v-if="ctxMenu.text" @click="copyAsMarkdown">📋 复制为 Markdown</button>
       <button v-if="ctxMenu.text" @click="copyAsPlainText">📋 复制为纯文本</button>
       <button v-if="ctxMenu.text" @click="askAboutText">💬 向 AI 提问选中内容</button>
-      <button v-if="ctxMenu.text" @click="translateSelection">🌐 {{ ctxMenu.hasSelection ? '翻译选中内容' : '翻译此段落' }}</button>
-      <template v-if="ctxMenu.hasSelection">
+      <button v-if="ctxMenu.text && !ctxMenu.translation" @click="translateSelection">🌐 {{ ctxMenu.hasSelection ? '翻译选中内容' : '翻译此段落' }}</button>
+      <template v-if="ctxMenu.hasSelection && (!ctxMenu.translation || !fullTranslation.generating)">
         <div class="ctx-divider"></div>
         <div class="ctx-submenu">
           <span class="ctx-submenu-label">🖍 高亮</span>
@@ -125,7 +176,7 @@
     <div v-if="noteEditor.show" class="note-editor-overlay" @click="noteEditor.show = false">
       <div class="note-editor-modal" @click.stop>
         <div class="note-editor-header">
-          <span>📝 添加注解</span>
+          <span>📝 添加{{ noteEditor.contentVersion === 'translation' ? '译文' : '原文' }}注解</span>
           <button class="close-btn" @click="noteEditor.show = false">✕</button>
         </div>
         <div class="note-editor-anchor">{{ noteEditor.anchorText }}</div>
@@ -159,19 +210,33 @@ const cfg = useConfigStore();
 const toast = inject('toast', () => {});
 const emit = defineEmits(['toggleChat', 'askImage', 'askText']);
 const view = ref('md');
+const readingVersion = ref('source');
+const activeMarkdownVersion = ref('source');
 const mdBox = ref(null);
 const translationBox = ref(null);
+const markdownSearchInput = ref(null);
 const pdfFrame = ref(null);
-const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '', hasSelection: false });
+const ctxMenu = reactive({ show: false, x: 0, y: 0, src: '', text: '', hasSelection: false, translation: false });
 const preview = reactive({ show: false, src: '' });
 const showOutline = ref(true);
-const outline = ref([]);
+const sourceOutline = ref([]);
+const translationOutline = ref([]);
 const translations = ref([]);
 const annotations = ref([]);
 let restoreDecorationsTask = null;
 let fullTranslationRenderTimer = null;
 let fullTranslationRenderSeq = 0;
 let syncingTranslationScroll = false;
+let markdownSearchRanges = [];
+let markdownSearchUsesSelection = false;
+
+const markdownSearch = reactive({
+  open: false,
+  query: '',
+  version: 'source',
+  current: -1,
+  count: 0,
+});
 
 const FULL_TRANSLATION_ID = 'full-doc-translation';
 const FULL_TRANSLATION_CHUNK_SIZE = 9000;
@@ -194,11 +259,179 @@ const highlightColors = [
   { id: 'orange', name: '橙色', bg: '#ffe0b2', mark: '#ffcc80' },
 ];
 
-const noteEditor = reactive({ show: false, anchorText: '', text: '', color: 'yellow', id: null });
+const noteEditor = reactive({ show: false, anchorText: '', text: '', color: 'yellow', id: null, contentVersion: 'source' });
 const noteEditorArea = ref(null);
 
 const paper = computed(() => papers.currentPaper);
 const title = computed(() => paper.value?.title || '未选择论文');
+const outline = computed(() => (
+  readingVersion.value === 'translation' && !fullTranslation.show
+    ? translationOutline.value
+    : sourceOutline.value
+));
+
+const SEARCH_HIGHLIGHT_ALL = 'aipaper-search-matches';
+const SEARCH_HIGHLIGHT_CURRENT = 'aipaper-search-current';
+const SEARCH_BLOCK_SELECTOR = 'p,h1,h2,h3,h4,h5,h6,li,td,th,blockquote,pre,dd,dt';
+
+function clearMarkdownSearchHighlights() {
+  window.CSS?.highlights?.delete(SEARCH_HIGHLIGHT_ALL);
+  window.CSS?.highlights?.delete(SEARCH_HIGHLIGHT_CURRENT);
+  if (markdownSearchUsesSelection) {
+    window.getSelection()?.removeAllRanges();
+    markdownSearchUsesSelection = false;
+  }
+}
+
+function searchableMarkdownText(container) {
+  const entries = [];
+  let text = '';
+  let previousBlock = null;
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.data) return NodeFilter.FILTER_REJECT;
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (parent.closest('.annotation-block, .translation-block, .full-translation-empty, .cursor, .katex')) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const block = node.parentElement?.closest(SEARCH_BLOCK_SELECTOR) || null;
+    if (entries.length && block !== previousBlock) text += '\n';
+    const start = text.length;
+    text += node.data;
+    entries.push({ node, start, end: text.length });
+    previousBlock = block;
+  }
+  return { text, entries };
+}
+
+function rangeForSearchMatch(entries, start, end) {
+  const startEntry = entries.find((entry) => start >= entry.start && start < entry.end);
+  const endOffset = end - 1;
+  const endEntry = entries.find((entry) => endOffset >= entry.start && endOffset < entry.end);
+  if (!startEntry || !endEntry) return null;
+  const range = document.createRange();
+  range.setStart(startEntry.node, start - startEntry.start);
+  range.setEnd(endEntry.node, end - endEntry.start);
+  return range;
+}
+
+function paintMarkdownSearchHighlights() {
+  clearMarkdownSearchHighlights();
+  if (!markdownSearchRanges.length) return;
+  if (window.CSS?.highlights && typeof window.Highlight === 'function') {
+    const matches = new window.Highlight();
+    markdownSearchRanges.forEach((range) => matches.add(range));
+    window.CSS.highlights.set(SEARCH_HIGHLIGHT_ALL, matches);
+    const current = markdownSearchRanges[markdownSearch.current];
+    if (current) window.CSS.highlights.set(SEARCH_HIGHLIGHT_CURRENT, new window.Highlight(current));
+    return;
+  }
+  const current = markdownSearchRanges[markdownSearch.current];
+  if (current) {
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(current);
+    markdownSearchUsesSelection = true;
+  }
+}
+
+function revealMarkdownSearchMatch() {
+  const range = markdownSearchRanges[markdownSearch.current];
+  if (!range) return;
+  paintMarkdownSearchHighlights();
+  const target = range.startContainer.parentElement;
+  target?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+}
+
+function runMarkdownSearch(preferredIndex = 0, reveal = true) {
+  clearMarkdownSearchHighlights();
+  markdownSearchRanges = [];
+  markdownSearch.count = 0;
+  markdownSearch.current = -1;
+  const query = markdownSearch.query.trim();
+  const container = readerForVersion(markdownSearch.version);
+  if (!query || !container) return;
+
+  const { text, entries } = searchableMarkdownText(container);
+  const haystack = text.toLocaleLowerCase();
+  const needle = query.toLocaleLowerCase();
+  let offset = 0;
+  while (markdownSearchRanges.length < 2000) {
+    const index = haystack.indexOf(needle, offset);
+    if (index < 0) break;
+    const range = rangeForSearchMatch(entries, index, index + needle.length);
+    if (range) markdownSearchRanges.push(range);
+    offset = index + Math.max(needle.length, 1);
+  }
+
+  markdownSearch.count = markdownSearchRanges.length;
+  if (!markdownSearch.count) return;
+  markdownSearch.current = Math.min(Math.max(preferredIndex, 0), markdownSearch.count - 1);
+  if (reveal) revealMarkdownSearchMatch();
+  else paintMarkdownSearchHighlights();
+}
+
+function updateMarkdownSearch() {
+  runMarkdownSearch(0, true);
+}
+
+function refreshMarkdownSearch(contentVersion) {
+  if (!markdownSearch.open || markdownSearch.version !== contentVersion) return;
+  runMarkdownSearch(Math.max(markdownSearch.current, 0), false);
+}
+
+function moveMarkdownSearch(step) {
+  if (!markdownSearch.count) return;
+  markdownSearch.current = (markdownSearch.current + step + markdownSearch.count) % markdownSearch.count;
+  revealMarkdownSearchMatch();
+}
+
+function setActiveMarkdownVersion(version) {
+  activeMarkdownVersion.value = version;
+  if (!markdownSearch.open || markdownSearch.version === version) return;
+  markdownSearch.version = version;
+  nextTick(() => runMarkdownSearch(0, true));
+}
+
+function openMarkdownSearch() {
+  const preferredIndex = markdownSearch.open ? Math.max(markdownSearch.current, 0) : 0;
+  const version = fullTranslation.show ? activeMarkdownVersion.value : readingVersion.value;
+  markdownSearch.version = version === 'translation' && !fullTranslation.text && !fullTranslation.generating
+    ? 'source'
+    : version;
+  markdownSearch.open = true;
+  nextTick(() => {
+    runMarkdownSearch(preferredIndex, Boolean(markdownSearch.query));
+    markdownSearchInput.value?.focus();
+    markdownSearchInput.value?.select();
+  });
+}
+
+function closeMarkdownSearch() {
+  markdownSearch.open = false;
+  markdownSearch.current = -1;
+  markdownSearch.count = 0;
+  markdownSearchRanges = [];
+  clearMarkdownSearchHighlights();
+}
+
+function onMarkdownSearchShortcut(event) {
+  if (view.value !== 'md' || noteEditor.show) return;
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+    event.preventDefault();
+    openMarkdownSearch();
+  } else if (event.key === 'Escape' && markdownSearch.open) {
+    event.preventDefault();
+    closeMarkdownSearch();
+  }
+}
 
 function hashText(text) {
   const value = String(text || '');
@@ -305,6 +538,7 @@ function renderFullTranslationPlaceholder(message = '点击“全文翻译”生
   if (!translationBox.value) return;
   cleanupMarkdownRender(translationBox.value);
   translationBox.value.innerHTML = `<div class="full-translation-empty">${message}</div>`;
+  translationOutline.value = [];
 }
 
 function scheduleFullTranslationRender({ final = false } = {}) {
@@ -329,11 +563,13 @@ async function renderFullTranslationMarkdown(seq = ++fullTranslationRenderSeq, f
     cleanupMarkdownRender(translationBox.value);
     translationBox.value.innerHTML = parseMarkdown(`${text}\n\n<span class="cursor">▌</span>`);
   }
+  translationOutline.value = extractOutline(translationBox.value, 'translation-heading');
+  if (final || !fullTranslation.generating) restoreAnnotations('translation');
+  refreshMarkdownSearch('translation');
 }
 
 async function toggleFullTranslationPane() {
   if (fullTranslation.show) {
-    cleanupMarkdownRender(translationBox.value);
     fullTranslation.show = false;
     return;
   }
@@ -341,6 +577,21 @@ async function toggleFullTranslationPane() {
   await nextTick();
   if (fullTranslation.text) scheduleFullTranslationRender({ final: !fullTranslation.generating });
   else renderFullTranslationPlaceholder();
+}
+
+async function setReadingVersion(version) {
+  if (version === 'translation' && !fullTranslation.text && !fullTranslation.generating) return;
+  readingVersion.value = version;
+  activeMarkdownVersion.value = version;
+  fullTranslation.show = false;
+  if (markdownSearch.open) markdownSearch.version = version;
+  if (version !== 'translation') {
+    if (markdownSearch.open) nextTick(() => runMarkdownSearch(0, Boolean(markdownSearch.query)));
+    return;
+  }
+  await nextTick();
+  if (fullTranslation.text) scheduleFullTranslationRender({ final: !fullTranslation.generating });
+  else renderFullTranslationPlaceholder('正在准备翻译...');
 }
 
 async function copyFullTranslation() {
@@ -352,6 +603,13 @@ async function copyFullTranslation() {
 async function clearFullTranslation() {
   cancelFullTranslation();
   const md = await store.loadMarkdown(papers.currentId).catch(() => '');
+  readingVersion.value = 'source';
+  activeMarkdownVersion.value = 'source';
+  fullTranslation.show = false;
+  if (markdownSearch.open) {
+    markdownSearch.version = 'source';
+    nextTick(() => runMarkdownSearch(0, Boolean(markdownSearch.query)));
+  }
   fullTranslation.text = '';
   fullTranslation.status = '';
   fullTranslation.error = '';
@@ -393,14 +651,15 @@ async function translateFullMarkdown(force = false) {
     return;
   }
   if (fullTranslation.text && !force) {
-    fullTranslation.show = true;
-    await nextTick();
-    scheduleFullTranslationRender({ final: true });
+    await setReadingVersion('translation');
     return;
   }
 
   const chunks = splitMarkdownForTranslation(md);
-  fullTranslation.show = true;
+  readingVersion.value = 'translation';
+  activeMarkdownVersion.value = 'translation';
+  fullTranslation.show = false;
+  if (markdownSearch.open) markdownSearch.version = 'translation';
   fullTranslation.generating = true;
   fullTranslation.text = '';
   fullTranslation.error = '';
@@ -527,11 +786,11 @@ async function downloadNote() {
   }
 }
 
-function extractOutline() {
-  if (!mdBox.value) return [];
-  const headings = mdBox.value.querySelectorAll('h1, h2, h3, h4, h5, h6');
+function extractOutline(container, idPrefix = 'heading') {
+  if (!container) return [];
+  const headings = container.querySelectorAll('h1, h2, h3, h4, h5, h6');
   return [...headings].map((el, idx) => {
-    const id = `heading-${idx}`;
+    const id = `${idPrefix}-${idx}`;
     el.id = id;
     return {
       id,
@@ -550,6 +809,10 @@ async function locateFigureInMarkdown(path) {
   const target = normalizeAssetPath(path);
   if (!target) return;
   view.value = 'md';
+  readingVersion.value = 'source';
+  activeMarkdownVersion.value = 'source';
+  fullTranslation.show = false;
+  if (markdownSearch.open) markdownSearch.version = 'source';
   await nextTick();
   const imgs = [...(mdBox.value?.querySelectorAll('img') || [])];
   const img = imgs.find((item) => {
@@ -578,7 +841,8 @@ function scheduleRestoreDecorations(paperId) {
     restoreDecorationsTask = null;
     if (papers.currentId !== paperId || !mdBox.value) return;
     restoreTranslationBlocks();
-    restoreAnnotations();
+    restoreAnnotations('source');
+    refreshMarkdownSearch('source');
   };
   if (typeof requestIdleCallback === 'function') {
     restoreDecorationsTask = { type: 'idle', id: requestIdleCallback(run, { timeout: 1000 }) };
@@ -589,13 +853,13 @@ function scheduleRestoreDecorations(paperId) {
 
 // 组件挂载时（key变化后重建）直接加载当前论文
 onMounted(async () => {
+  window.addEventListener('keydown', onMarkdownSearchShortcut);
   const id = papers.currentId;
   if (!id) return;
   const md = await store.loadMarkdown(id).catch(() => null);
   if (md && mdBox.value && paper.value?.state === 'done') {
     await renderMarkdown(mdBox.value, md, id);
-    mdBox.value.addEventListener('click', onImageClick);
-    outline.value = extractOutline();
+    sourceOutline.value = extractOutline(mdBox.value, 'source-heading');
     translations.value = await store.loadTranslations(id).catch(() => []);
     applySavedFullTranslation(md);
     annotations.value = await store.loadAnnotations(id).catch(() => []);
@@ -608,6 +872,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onMarkdownSearchShortcut);
+  closeMarkdownSearch();
   cancelRestoreDecorations();
   clearFullTranslationRenderTimer();
   cancelFullTranslation();
@@ -632,11 +898,19 @@ function onImageClick(e) {
   }
 }
 
-// 找到鼠标所在的最接近 mdBox 直接子元素的段落块
+function findReaderContainer(target) {
+  if (!target) return null;
+  if (mdBox.value?.contains(target)) return mdBox.value;
+  if (translationBox.value?.contains(target)) return translationBox.value;
+  return null;
+}
+
+// 找到鼠标所在的最接近阅读区直接子元素的段落块
 function findHoverBlock(target) {
-  if (!mdBox.value || !target || target === mdBox.value) return null;
+  const container = findReaderContainer(target);
+  if (!container || target === container) return null;
   let el = target;
-  while (el && el.parentElement !== mdBox.value) {
+  while (el && el.parentElement !== container) {
     el = el.parentElement;
     if (!el) return null;
   }
@@ -655,6 +929,7 @@ function onContextMenu(e) {
   ctxMenu.src = isImg ? e.target.src : '';
   ctxMenu.text = selectedText || (hoverBlock ? hoverBlock.textContent.trim() : '');
   ctxMenu.hasSelection = !!selectedText;
+  ctxMenu.translation = translationBox.value?.contains(e.target) || false;
   ctxMenu.x = e.clientX;
   ctxMenu.y = e.clientY;
   ctxMenu.show = true;
@@ -667,20 +942,20 @@ function askAboutText() {
 
 // ---------- 翻译 ----------
 // 按段落块匹配 textContent,兼容段落内有 mark/高亮等子标签的情况
-function findAnchorElement(selectedText) {
-  if (!mdBox.value) return null;
+function findAnchorElement(selectedText, container = mdBox.value) {
+  if (!container) return null;
   const blockTags = ['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'BLOCKQUOTE', 'PRE', 'DD', 'DT'];
-  for (const child of mdBox.value.children) {
+  for (const child of container.children) {
     if (blockTags.includes(child.tagName) && child.textContent.includes(selectedText)) {
       return child;
     }
   }
   // 兜底:文本节点级匹配(选中文字在单个文本节点内时)
-  const walker = document.createTreeWalker(mdBox.value, NodeFilter.SHOW_TEXT, null);
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
   while (walker.nextNode()) {
     if (walker.currentNode.textContent.includes(selectedText)) {
       let el = walker.currentNode.parentElement;
-      while (el && el !== mdBox.value && el.parentElement !== mdBox.value) {
+      while (el && el !== container && el.parentElement !== container) {
         el = el.parentElement;
       }
       return el;
@@ -776,13 +1051,32 @@ function getColorMark(colorId) {
   return highlightColors.find((c) => c.id === colorId)?.mark || '#ffd54f';
 }
 
+function annotationContentVersion(annotation) {
+  return annotation?.contentVersion === 'translation' ? 'translation' : 'source';
+}
+
+function readerForVersion(version) {
+  return version === 'translation' ? translationBox.value : mdBox.value;
+}
+
+function findAnnotationElement(selector, annotation) {
+  const preferred = readerForVersion(annotationContentVersion(annotation));
+  return preferred?.querySelector(selector)
+    || mdBox.value?.querySelector(selector)
+    || translationBox.value?.querySelector(selector)
+    || null;
+}
+
 function highlightSelection(colorId) {
+  const contentVersion = ctxMenu.translation ? 'translation' : 'source';
   ctxMenu.show = false;
   const selectedText = ctxMenu.text;
   if (!selectedText) return;
   const sel = window.getSelection();
   if (!sel || !sel.rangeCount) return;
   const range = sel.getRangeAt(0);
+  const container = readerForVersion(contentVersion);
+  if (!container?.contains(range.commonAncestorContainer)) return;
   const id = 'hl_' + Date.now().toString(36);
   const mark = document.createElement('mark');
   mark.className = 'user-highlight';
@@ -792,7 +1086,7 @@ function highlightSelection(colorId) {
   mark.title = '点击删除高亮';
   try {
     range.surroundContents(mark);
-    const ann = { id, type: 'highlight', anchorText: selectedText, color: colorId, createdAt: Date.now() };
+    const ann = { id, type: 'highlight', contentVersion, anchorText: selectedText, color: colorId, createdAt: Date.now() };
     annotations.value.push(ann);
     store.saveAnnotations(papers.currentId, annotations.value).catch(() => {});
     mark.addEventListener('click', (e) => { e.stopPropagation(); removeHighlight(id); });
@@ -800,7 +1094,8 @@ function highlightSelection(colorId) {
 }
 
 function removeHighlight(id) {
-  const mark = mdBox.value?.querySelector(`mark.user-highlight[data-id="${id}"]`);
+  const ann = annotations.value.find((item) => item.id === id);
+  const mark = findAnnotationElement(`mark.user-highlight[data-id="${id}"]`, ann);
   if (mark) {
     const parent = mark.parentNode;
     while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
@@ -811,31 +1106,35 @@ function removeHighlight(id) {
   store.saveAnnotations(papers.currentId, annotations.value).catch(() => {});
 }
 
-function restoreHighlights() {
-  if (!mdBox.value) return;
-  annotations.value.filter((a) => a.type === 'highlight').forEach((ann) => {
-    const walker = document.createTreeWalker(mdBox.value, NodeFilter.SHOW_TEXT, null);
-    while (walker.nextNode()) {
-      const node = walker.currentNode;
-      const idx = node.textContent.indexOf(ann.anchorText);
-      if (idx >= 0) {
-        const range = document.createRange();
-        range.setStart(node, idx);
-        range.setEnd(node, idx + ann.anchorText.length);
-        const mark = document.createElement('mark');
-        mark.className = 'user-highlight';
-        mark.dataset.id = ann.id;
-        mark.dataset.color = ann.color;
-        mark.style.background = getColorMark(ann.color);
-        mark.title = '点击删除高亮';
-        try {
-          range.surroundContents(mark);
-          mark.addEventListener('click', (e) => { e.stopPropagation(); removeHighlight(ann.id); });
-        } catch { /* 跨节点失败忽略 */ }
-        break;
+function restoreHighlights(contentVersion = 'source') {
+  const container = readerForVersion(contentVersion);
+  if (!container) return;
+  annotations.value
+    .filter((ann) => ann.type === 'highlight' && annotationContentVersion(ann) === contentVersion)
+    .forEach((ann) => {
+      if (container.querySelector(`mark.user-highlight[data-id="${ann.id}"]`)) return;
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const idx = node.textContent.indexOf(ann.anchorText);
+        if (idx >= 0) {
+          const range = document.createRange();
+          range.setStart(node, idx);
+          range.setEnd(node, idx + ann.anchorText.length);
+          const mark = document.createElement('mark');
+          mark.className = 'user-highlight';
+          mark.dataset.id = ann.id;
+          mark.dataset.color = ann.color;
+          mark.style.background = getColorMark(ann.color);
+          mark.title = '点击删除高亮';
+          try {
+            range.surroundContents(mark);
+            mark.addEventListener('click', (e) => { e.stopPropagation(); removeHighlight(ann.id); });
+          } catch { /* 跨节点失败忽略 */ }
+          break;
+        }
       }
-    }
-  });
+    });
 }
 
 // ---------- 注解 ----------
@@ -845,6 +1144,7 @@ function addAnnotation() {
   noteEditor.text = '';
   noteEditor.color = 'yellow';
   noteEditor.id = null;
+  noteEditor.contentVersion = ctxMenu.translation ? 'translation' : 'source';
   noteEditor.show = true;
   nextTick(() => noteEditorArea.value?.focus());
 }
@@ -856,6 +1156,7 @@ function editAnnotation(id) {
   noteEditor.text = ann.note;
   noteEditor.color = ann.color;
   noteEditor.id = id;
+  noteEditor.contentVersion = annotationContentVersion(ann);
   noteEditor.show = true;
   nextTick(() => noteEditorArea.value?.focus());
 }
@@ -870,13 +1171,14 @@ function confirmAnnotation() {
     if (ann) {
       ann.note = noteEditor.text.trim();
       ann.color = noteEditor.color;
-      const block = mdBox.value?.querySelector(`.annotation-block[data-id="${noteEditor.id}"]`);
+      ann.contentVersion = noteEditor.contentVersion;
+      const block = findAnnotationElement(`.annotation-block[data-id="${noteEditor.id}"]`, ann);
       if (block) {
         block.dataset.color = noteEditor.color;
         block.style.borderLeftColor = getColorMark(noteEditor.color);
         block.querySelector('.annotation-body').textContent = ann.note;
       }
-      const mark = mdBox.value?.querySelector(`mark.annotated-text[data-id="${noteEditor.id}"]`);
+      const mark = findAnnotationElement(`mark.annotated-text[data-id="${noteEditor.id}"]`, ann);
       if (mark) {
         mark.style.background = getColorMark(noteEditor.color);
         mark.style.borderBottomColor = getColorMark(noteEditor.color);
@@ -884,7 +1186,15 @@ function confirmAnnotation() {
     }
   } else {
     const id = 'note_' + Date.now().toString(36);
-    const ann = { id, type: 'note', anchorText: noteEditor.anchorText, note: noteEditor.text.trim(), color: noteEditor.color, createdAt: Date.now() };
+    const ann = {
+      id,
+      type: 'note',
+      contentVersion: noteEditor.contentVersion,
+      anchorText: noteEditor.anchorText,
+      note: noteEditor.text.trim(),
+      color: noteEditor.color,
+      createdAt: Date.now(),
+    };
     annotations.value.push(ann);
     markAnnotatedText(ann);
     insertAnnotationBlock(ann);
@@ -893,10 +1203,11 @@ function confirmAnnotation() {
   noteEditor.show = false;
 }
 
-// 用 mark 标记被注解的原文,与注解块用 data-id 关联
+// 用 mark 标记被注解的内容,与注解块用 data-id 关联
 function markAnnotatedText(ann) {
-  if (!mdBox.value) return;
-  const walker = document.createTreeWalker(mdBox.value, NodeFilter.SHOW_TEXT, null);
+  const container = readerForVersion(annotationContentVersion(ann));
+  if (!container || container.querySelector(`mark.annotated-text[data-id="${ann.id}"]`)) return;
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
   while (walker.nextNode()) {
     const node = walker.currentNode;
     const idx = node.textContent.indexOf(ann.anchorText);
@@ -916,7 +1227,7 @@ function markAnnotatedText(ann) {
         range.surroundContents(mark);
         mark.addEventListener('click', (e) => {
           e.stopPropagation();
-          const block = mdBox.value?.querySelector(`.annotation-block[data-id="${ann.id}"]`);
+          const block = container.querySelector(`.annotation-block[data-id="${ann.id}"]`);
           if (block) {
             block.scrollIntoView({ behavior: 'smooth', block: 'center' });
             block.classList.add('annotation-flash');
@@ -930,12 +1241,13 @@ function markAnnotatedText(ann) {
 }
 
 function createAnnotationBlock(ann) {
+  const container = readerForVersion(annotationContentVersion(ann));
   const block = document.createElement('div');
   block.className = 'annotation-block';
   block.dataset.id = ann.id;
   block.dataset.color = ann.color;
   block.style.borderLeftColor = getColorMark(ann.color);
-  block.title = '点击定位到原文';
+  block.title = annotationContentVersion(ann) === 'translation' ? '点击定位到译文' : '点击定位到原文';
   block.innerHTML = `
     <div class="annotation-header">
       <span class="annotation-label">📝 注解</span>
@@ -948,7 +1260,7 @@ function createAnnotationBlock(ann) {
   block.querySelector('.annotation-edit').addEventListener('click', (e) => { e.stopPropagation(); editAnnotation(ann.id); });
   block.querySelector('.annotation-remove').addEventListener('click', (e) => { e.stopPropagation(); removeAnnotation(ann.id); });
   block.addEventListener('click', () => {
-    const mark = mdBox.value?.querySelector(`mark.annotated-text[data-id="${ann.id}"]`);
+    const mark = container?.querySelector(`mark.annotated-text[data-id="${ann.id}"]`);
     if (mark) {
       mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
       mark.classList.add('annotation-flash');
@@ -959,21 +1271,24 @@ function createAnnotationBlock(ann) {
 }
 
 function insertAnnotationBlock(ann) {
-  const anchor = findAnchorElement(ann.anchorText);
+  const container = readerForVersion(annotationContentVersion(ann));
+  if (!container || container.querySelector(`.annotation-block[data-id="${ann.id}"]`)) return;
+  const anchor = findAnchorElement(ann.anchorText, container);
   const block = createAnnotationBlock(ann);
   if (anchor && anchor.parentElement) {
     anchor.insertAdjacentElement('afterend', block);
-  } else if (mdBox.value) {
-    mdBox.value.appendChild(block);
+  } else {
+    container.appendChild(block);
   }
 }
 
 function removeAnnotation(id) {
+  const ann = annotations.value.find((item) => item.id === id);
   annotations.value = annotations.value.filter((a) => a.id !== id);
   store.saveAnnotations(papers.currentId, annotations.value).catch(() => {});
-  const block = mdBox.value?.querySelector(`.annotation-block[data-id="${id}"]`);
+  const block = findAnnotationElement(`.annotation-block[data-id="${id}"]`, ann);
   if (block) block.remove();
-  const mark = mdBox.value?.querySelector(`mark.annotated-text[data-id="${id}"]`);
+  const mark = findAnnotationElement(`mark.annotated-text[data-id="${id}"]`, ann);
   if (mark) {
     const parent = mark.parentNode;
     while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
@@ -982,13 +1297,15 @@ function removeAnnotation(id) {
   }
 }
 
-function restoreAnnotations() {
-  if (!mdBox.value) return;
-  restoreHighlights();
-  annotations.value.filter((a) => a.type === 'note').forEach((ann) => {
-    markAnnotatedText(ann);
-    insertAnnotationBlock(ann);
-  });
+function restoreAnnotations(contentVersion = 'source') {
+  if (!readerForVersion(contentVersion)) return;
+  restoreHighlights(contentVersion);
+  annotations.value
+    .filter((ann) => ann.type === 'note' && annotationContentVersion(ann) === contentVersion)
+    .forEach((ann) => {
+      markAnnotatedText(ann);
+      insertAnnotationBlock(ann);
+    });
 }
 
 async function askAboutImage() {
@@ -1211,6 +1528,35 @@ function onNotesAskText(text) {
   gap: 8px;
   flex-shrink: 0;
 }
+.markdown-version-switch {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid #d9e0ea;
+  border-radius: 6px;
+  background: #f6f8fb;
+}
+.markdown-version-switch button {
+  min-width: 44px;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.markdown-version-switch button:hover {
+  color: #2563eb;
+}
+.markdown-version-switch button.active {
+  background: #fff;
+  color: #2563eb;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .12);
+}
 .viewer-md-tools .btn.primary {
   background: #eff6ff;
   color: #2563eb;
@@ -1231,6 +1577,76 @@ function onNotesAskText(text) {
 .status-bar.failed { background: #fce8e8; border-color: #f5c2c2; color: var(--red); }
 .progress { flex: 1; height: 6px; background: #eceef0; border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; background: var(--primary); transition: width .3s; }
+.markdown-search-bar {
+  min-height: 44px;
+  padding: 6px 18px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.markdown-search-scope {
+  min-width: 34px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+.markdown-search-bar input {
+  width: min(320px, 34vw);
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.markdown-search-bar input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, .14);
+}
+.markdown-search-count {
+  min-width: 48px;
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.markdown-search-bar button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+.markdown-search-bar button:hover:not(:disabled) {
+  border-color: #dbe3ee;
+  background: #fff;
+  color: #2563eb;
+}
+.markdown-search-bar button:disabled {
+  color: #cbd5e1;
+  cursor: default;
+}
+:global(::highlight(aipaper-search-matches)) {
+  background: #fde68a;
+  color: inherit;
+}
+:global(::highlight(aipaper-search-current)) {
+  background: #fb923c;
+  color: #111827;
+}
 .viewer-body { flex: 1; overflow: hidden; position: relative; display: flex; }
 .outline-panel {
   width: 240px; flex-shrink: 0;
@@ -1292,13 +1708,16 @@ function onNotesAskText(text) {
 }
 .md-view .placeholder { color: var(--muted); text-align: center; margin-top: 80px; }
 .md-view .placeholder.error { color: var(--red); }
-.md-view :deep(img) { cursor: pointer; transition: opacity .2s; }
-.md-view :deep(img:hover) { opacity: 0.85; }
+.md-view :deep(img),
+.full-translation-body :deep(img) { cursor: pointer; transition: opacity .2s; }
+.md-view :deep(img:hover),
+.full-translation-body :deep(img:hover) { opacity: 0.85; }
 .md-view :deep(img.figure-locate-flash) {
   box-shadow: 0 0 0 4px rgba(47, 111, 237, .35);
   border-radius: 6px;
 }
-.md-view :deep(.hover-block) {
+.md-view :deep(.hover-block),
+.full-translation-body :deep(.hover-block) {
   background: #f0f4f8;
   border-radius: 4px;
   box-shadow: 0 0 0 2px #e0e7ff;
@@ -1313,6 +1732,12 @@ function onNotesAskText(text) {
   flex-direction: column;
   overflow: hidden;
   background: #fbfcff;
+}
+.full-translation-pane.standalone {
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  background: #fff;
 }
 .full-translation-head {
   min-height: 58px;
@@ -1350,6 +1775,9 @@ function onNotesAskText(text) {
   padding: 32px 40px;
   line-height: 1.7;
 }
+.full-translation-pane.standalone .full-translation-body {
+  padding: 32px 48px;
+}
 .full-translation-body :deep(.full-translation-empty) {
   margin: 72px auto 0;
   max-width: 320px;
@@ -1380,6 +1808,9 @@ function onNotesAskText(text) {
     width: 100%;
     min-width: 0;
     height: 50%;
+  }
+  .full-translation-pane.standalone {
+    height: 100%;
   }
 }
 .img-ctx-menu {
@@ -1432,43 +1863,43 @@ function onNotesAskText(text) {
 .md-view :deep(.translation-body p) { margin: .3em 0; }
 .md-view :deep(.cursor) { animation: blink .7s step-end infinite; }
 
-.md-view :deep(mark.user-highlight) {
+.markdown-reader :deep(mark.user-highlight) {
   border-radius: 3px; padding: 1px 2px; cursor: pointer;
   transition: opacity .15s;
 }
-.md-view :deep(mark.user-highlight:hover) { opacity: 0.7; }
+.markdown-reader :deep(mark.user-highlight:hover) { opacity: 0.7; }
 
-.md-view :deep(mark.annotated-text) {
+.markdown-reader :deep(mark.annotated-text) {
   border-radius: 3px; padding: 1px 2px; cursor: pointer;
   transition: background .15s;
 }
-.md-view :deep(mark.annotated-text:hover) { background: rgba(255, 213, 79, 0.4) !important; }
+.markdown-reader :deep(mark.annotated-text:hover) { background: rgba(255, 213, 79, 0.4) !important; }
 
-.md-view :deep(.annotation-block) {
+.markdown-reader :deep(.annotation-block) {
   margin: 10px 0; padding: 10px 14px;
   background: #fffde7; border-left: 3px solid #ffd54f; border-radius: 0 8px 8px 0;
   transition: box-shadow .3s;
 }
-.md-view :deep(.annotation-block.annotation-flash) {
+.markdown-reader :deep(.annotation-block.annotation-flash) {
   box-shadow: 0 0 0 3px #ffd54f;
 }
-.md-view :deep(mark.annotated-text.annotation-flash) {
+.markdown-reader :deep(mark.annotated-text.annotation-flash) {
   box-shadow: 0 0 0 3px #ffd54f;
   border-radius: 3px;
 }
-.md-view :deep(.annotation-header) {
+.markdown-reader :deep(.annotation-header) {
   display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
 }
-.md-view :deep(.annotation-label) { font-size: 12px; color: var(--muted); font-weight: 600; }
-.md-view :deep(.annotation-edit),
-.md-view :deep(.annotation-remove) {
+.markdown-reader :deep(.annotation-label) { font-size: 12px; color: var(--muted); font-weight: 600; }
+.markdown-reader :deep(.annotation-edit),
+.markdown-reader :deep(.annotation-remove) {
   border: none; background: transparent; cursor: pointer; font-size: 14px;
   padding: 2px 6px; border-radius: 4px; color: var(--muted); transition: .15s;
 }
-.md-view :deep(.annotation-edit) { margin-left: auto; }
-.md-view :deep(.annotation-edit:hover) { background: rgba(0,0,0,.06); }
-.md-view :deep(.annotation-remove:hover) { background: rgba(0,0,0,.06); color: var(--red); }
-.md-view :deep(.annotation-body) { font-size: 14px; line-height: 1.6; color: var(--text); white-space: pre-wrap; }
+.markdown-reader :deep(.annotation-edit) { margin-left: auto; }
+.markdown-reader :deep(.annotation-edit:hover) { background: rgba(0,0,0,.06); }
+.markdown-reader :deep(.annotation-remove:hover) { background: rgba(0,0,0,.06); color: var(--red); }
+.markdown-reader :deep(.annotation-body) { font-size: 14px; line-height: 1.6; color: var(--text); white-space: pre-wrap; }
 
 .ctx-divider { height: 1px; background: var(--border); margin: 4px 0; }
 .ctx-submenu { padding: 6px 16px; }
